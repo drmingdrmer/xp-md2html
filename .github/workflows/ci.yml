@@ -57,12 +57,17 @@ jobs:
           override: true
 
 
+      - uses: mfinelli/setup-imagemagick@v6
+      - run: magick drdrxp.jpg -resize 100x100 output.jpg
+
       - name: Test
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --features "${{ matrix.features }}"
+          args: --features "${{ matrix.features }}" --  --show-output
         env:
+          # The CI may not have enough resource to run all tests in parallel.
+          RUST_TEST_THREADS: 1
           RUST_LOG: debug
           RUST_BACKTRACE: full
 
@@ -98,3 +103,4 @@ jobs:
           args: --all --no-deps
         env:
           RUSTDOCFLAGS: "-D warnings"
+

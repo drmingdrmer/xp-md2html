@@ -39,9 +39,9 @@ impl WithChrome {
         let temp_dir = TempDir::new()?;
         let cwd = temp_dir.path();
 
-        let input_file_path = Self::create_markup_file(&cwd, input, mime, asset_base)?;
+        let input_file_path = Self::create_markup_file(cwd, input, mime, asset_base)?;
 
-        let mut cmd = Self::build_chrome_snapshot_cmd(&input_file_path, width, height, &cwd)?;
+        let mut cmd = Self::build_chrome_snapshot_cmd(&input_file_path, width, height, cwd)?;
 
         let mes = format!(
             "Failed take snapshot with chrome: {:?}; cwd: {}",
@@ -49,14 +49,30 @@ impl WithChrome {
             cwd.display()
         );
 
+        // Set working directory and environment for the command
+        cmd.current_dir(cwd);
+        cmd.env("DISPLAY", ":99"); // Virtual display for headless CI
+
         let chrome_status = cmd.status().context(mes.clone())?;
+
+        println!("chrome_status: {:?}; cmd: {:?}", chrome_status, cmd);
 
         if !chrome_status.success() {
             anyhow::bail!("{}: exit code: {:?}", mes, chrome_status.code());
         }
 
+        println!("chrome_status success: {:?}; cmd: {:?}", chrome_status, cmd);
+
         // The default screenshot path.
         let screenshot_path = cwd.join("screenshot.png");
+
+        // show the content of cwd dir for debug
+        println!("cwd: {}", cwd.display());
+        let files = fs::read_dir(cwd).context("Failed to read cwd")?;
+        for file in files {
+            let file = file?;
+            println!("{}", file.path().display());
+        }
 
         // Process the screenshot based on output type
         let final_image_data = Self::trim_image(&screenshot_path, output_type)?;
@@ -108,23 +124,24 @@ impl WithChrome {
             "chrome",
         ];
 
-        for name in &chrome_names {
-            if let Ok(output) = Command::new("which").arg(name).output() {
-                if output.status.success() {
-                    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    if !path.is_empty() {
-                        return Ok(path);
-                    }
-                }
-            }
-        }
-
-        anyhow::bail!("Chrome/Chromium executable not found. Please install Chrome or Chromium.")
+        Self::find_available_command(&chrome_names)
+        // for name in &chrome_names {
+        //     if let Ok(output) = Command::new("which").arg(name).output() {
+        //         if output.status.success() {
+        //             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        //             if !path.is_empty() {
+        //                 return Ok(path);
+        //             }
+        //         }
+        //     }
+        // }
+        //
+        // anyhow::bail!("Chrome/Chromium executable not found. Please install Chrome or Chromium.")
     }
 
     /// Trim image using ImageMagick (matches Python logic)
     fn trim_image(screenshot_path: &Path, output_type: &str) -> anyhow::Result<Vec<u8>> {
-        let mut cmd = Self::build_trim_image_cmd(screenshot_path, output_type);
+        let mut cmd = Self::build_trim_image_cmd(screenshot_path, output_type)?;
 
         let output = cmd
             .output()
@@ -180,6 +197,17 @@ impl WithChrome {
             "--headless",
             "--disable-gpu",
             "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-background-timer-throttling",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-renderer-backgrounding",
+            "--disable-features=TranslateUI",
+            "--disable-ipc-flooding-protection",
+            "--disable-extensions",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-web-security",
+            "--disable-features=VizDisplayCompositor",
             "--screenshot",
             &format!("--window-size={},{}", width, height),
             "--default-background-color=00000000",
@@ -190,9 +218,44 @@ impl WithChrome {
         Ok(cmd)
     }
 
+    /// Return the first available command from a list
+    fn find_available_command(commands: &[&str]) -> anyhow::Result<String> {
+        for cmd in commands {
+            // output debug info about the command:
+            let mut probe = Command::new("which");
+            probe.arg(cmd);
+
+            let output = probe.output().unwrap();
+
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+            println!("--------------------------------");
+            println!("command: {:?}", probe);
+            println!("exit code: {}", output.status);
+            println!("stdout:");
+            println!("{}", stdout);
+            println!("stderr:");
+            println!("{}", stderr);
+            println!("--------------------------------");
+
+            if output.status.success() {
+                println!("Found command: {} at {}", cmd, stdout);
+                return Ok(cmd.to_string());
+            }
+        }
+        anyhow::bail!("No available command found in PATH: {:?}", commands)
+    }
+
     /// Build a ImageMagick command to trim image that output directly to stdout
-    fn build_trim_image_cmd(screenshot_path: &Path, output_type: &str) -> Command {
-        let mut cmd = Command::new("convert");
+    fn build_trim_image_cmd(screenshot_path: &Path, output_type: &str) -> anyhow::Result<Command> {
+        // Find the first available `convert` command:
+        // ImageMagick's `convert` command is deprecated and replaced by `magick convert`
+        let commands = ["magick", "convert"];
+
+        let executable = Self::find_available_command(&commands)?;
+
+        let mut cmd = Command::new(executable);
         cmd.arg(screenshot_path).arg("-trim").arg("+repage");
 
         if output_type == "png" {
@@ -205,7 +268,7 @@ impl WithChrome {
         // Output to stdout
         cmd.arg(format!("{}:-", output_type));
 
-        cmd
+        Ok(cmd)
     }
 }
 
