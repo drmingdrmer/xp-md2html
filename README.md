@@ -1,20 +1,13 @@
 # XPMD - HTML to Image Converter
 
-Convert HTML content to images and PDFs using headless Chrome.
+Convert HTML/SVG to images and PDFs using headless Chrome.
+
+## Prerequisites
+
+- Chrome/Chromium browser
+- ImageMagick: `brew install imagemagick` (macOS) or `sudo apt install imagemagick` (Linux)
 
 ## Installation
-
-### Prerequisites
-
-Install Chrome/Chromium and ImageMagick:
-
-- **Chrome**: [https://www.google.com/chrome/](https://www.google.com/chrome/)
-- **ImageMagick**: 
-  - macOS: `brew install imagemagick`
-  - Linux: `sudo apt install imagemagick`
-  - Windows: [https://imagemagick.org/](https://imagemagick.org/)
-
-### Build
 
 ```bash
 git clone <repository-url>
@@ -25,23 +18,15 @@ cargo build --release --bin xpmd
 ## Usage
 
 ```bash
-# Basic usage
-xpmd render --input page.html --output screenshot.png
-
-# Custom size
-xpmd render --input page.html --output screenshot.png --width 1200 --height 800
-
-# Different formats
-xpmd render --input page.html --output document.pdf --format pdf
-xpmd render --input page.html --output image.jpg --format jpeg
+xpmd render -i input.html -o output.png [OPTIONS]
 ```
 
 ### Options
 
 ```
--i, --input <INPUT>    Input HTML file
+-i, --input <INPUT>    Input file (HTML/SVG)
 -o, --output <OUTPUT>  Output file
--f, --format <FORMAT>  Output format: png, jpg, jpeg, pdf [default: png]
+-f, --format <FORMAT>  png, jpg, jpeg, pdf [default: png]
 -w, --width <WIDTH>    Window width [default: 1000]
     --height <HEIGHT>  Window height [default: 2000]
 -m, --mime <MIME>      MIME type (auto-detected)
@@ -51,16 +36,18 @@ xpmd render --input page.html --output image.jpg --format jpeg
 ## Examples
 
 ```bash
-# Simple HTML
-echo '<h1>Hello World!</h1>' > hello.html
-xpmd render -i hello.html -o hello.png
+# Basic conversion
+xpmd render -i page.html -o screenshot.png
 
-# With custom dimensions
-xpmd render -i page.html -o large.png --width 1920 --height 1080
+# Custom size and format
+xpmd render -i page.html -o document.pdf -f pdf -w 1200 --height 800
 
-# SVG to PNG
-xpmd render -i diagram.svg -o diagram.png --mime "image/svg+xml"
-
-# HTML with local assets
-xpmd render -i index.html -o webpage.png --base /path/to/assets
+# SVG with assets
+xpmd render -i diagram.svg -o diagram.png -b /path/to/assets
 ```
+
+# TODO
+
+- golend_test 里不需要name
+- 测试不同尺寸的图片是否能对比出正确的相似度，如果不可以的话，可能要先在先统一尺寸
+- with Chrome 这个 structure 先设定一个宽度大小，再新建的时候就把 Chrome 路径什么都准备好，而不是在执行的时候准备，执行的时候只接受一个参数，就是输入的内容。

@@ -15,3 +15,7 @@ markdown = "1.0.0-alpha.16"
 tempfile = "3.8"
 tokio = { version = "1.0", features = ["full"] }
 clap = { version = "4.4", features = ["derive"] }
+
+[dev-dependencies]
+image-compare = "0.4"
+image = "0.25"
