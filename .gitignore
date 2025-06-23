@@ -17,3 +17,5 @@ Cargo.lock
 /target
 /.idea
 /resources
+
+.DS_Store

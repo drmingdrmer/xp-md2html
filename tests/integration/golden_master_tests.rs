@@ -10,12 +10,21 @@ use xp_md2html::render::with_chrome::WithChrome;
 
 /// Golden master test configuration
 struct GoldenTest {
-    name: &'static str,
     input_file: &'static str,
     mime_type: &'static str,
     width: u32,
     height: u32,
     similarity_threshold: f64,
+}
+
+impl GoldenTest {
+    fn name(&self) -> &str {
+        // remove the suffix from the input file
+        self.input_file
+            .rsplit_once('.')
+            .map(|(name, _)| name)
+            .unwrap_or(self.input_file)
+    }
 }
 
 /// Struct contains fixtures, golden and debug paths
@@ -26,7 +35,7 @@ struct TestPaths {
 }
 
 /// Helper function to get test paths
-fn get_test_paths(_test_name: &str) -> TestPaths {
+fn get_test_paths() -> TestPaths {
     let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
 
     let fixtures_dir = root_dir.join("tests/fixtures");
@@ -114,9 +123,9 @@ async fn run_golden_test(test: &GoldenTest) -> Result<()> {
     let result = do_run_golden_test(test).await;
 
     if let Err(e) = &result {
-        println!("🔴 Golden test '{}' failed: {}", test.name, e);
+        println!("🔴 Golden test '{}' failed: {}", test.name(), e);
     } else {
-        println!("✅ Golden test '{}' passed", test.name);
+        println!("✅ Golden test '{}' passed", test.name());
     }
 
     result
@@ -124,7 +133,7 @@ async fn run_golden_test(test: &GoldenTest) -> Result<()> {
 
 /// Run a golden master test
 async fn do_run_golden_test(test: &GoldenTest) -> Result<()> {
-    let paths = get_test_paths(test.name);
+    let paths = get_test_paths();
 
     // Read input content
     let input_path = paths.fixtures_dir.join(test.input_file);
@@ -144,13 +153,13 @@ async fn do_run_golden_test(test: &GoldenTest) -> Result<()> {
 
     // Always save debug copy to tests/debug
     {
-        let debug_path = paths.debug_dir.join(format!("{}.actual.png", test.name));
+        let debug_path = paths.debug_dir.join(format!("{}.actual.png", test.name()));
         fs::write(&debug_path, &actual_data)?;
         println!("🔍 Debug image saved: {}", debug_path.display());
     }
 
     // Golden file path
-    let golden_path = paths.golden_dir.join(format!("{}.png", test.name));
+    let golden_path = paths.golden_dir.join(format!("{}.png", test.name()));
 
     if !golden_path.exists() {
         // Create golden file on first run
@@ -163,7 +172,7 @@ async fn do_run_golden_test(test: &GoldenTest) -> Result<()> {
     // Compare with golden image
     compare_images(&golden_path, &actual_data, test.similarity_threshold)?;
 
-    println!("✅ Golden test '{}' passed", test.name);
+    println!("✅ Golden test '{}' passed", test.name());
     Ok(())
 }
 
@@ -171,7 +180,6 @@ async fn do_run_golden_test(test: &GoldenTest) -> Result<()> {
 #[tokio::test]
 async fn test_simple_html_rendering() {
     let test = GoldenTest {
-        name: "simple_html",
         input_file: "simple.html",
         mime_type: "text/html",
         width: 800,
@@ -185,7 +193,6 @@ async fn test_simple_html_rendering() {
 #[tokio::test]
 async fn test_styled_html_rendering() {
     let test = GoldenTest {
-        name: "styled_html",
         input_file: "styled.html",
         mime_type: "text/html",
         width: 800,
@@ -199,7 +206,6 @@ async fn test_styled_html_rendering() {
 #[tokio::test]
 async fn test_svg_rendering() {
     let test = GoldenTest {
-        name: "svg_test",
         input_file: "svg.svg",
         mime_type: "image/svg+xml",
         width: 400,
@@ -213,7 +219,6 @@ async fn test_svg_rendering() {
 #[tokio::test]
 async fn test_different_dimensions() {
     let test = GoldenTest {
-        name: "simple_large",
         input_file: "simple.html",
         mime_type: "text/html",
         width: 1200,
@@ -229,7 +234,6 @@ async fn test_different_dimensions() {
 #[ignore] // Run with: cargo test test_failure_demo -- --ignored
 async fn test_failure_demo() {
     let test = GoldenTest {
-        name: "simple_html",            // Using existing golden but different input
         input_file: "simple_test.html", // Different input file
         mime_type: "text/html",
         width: 800,
