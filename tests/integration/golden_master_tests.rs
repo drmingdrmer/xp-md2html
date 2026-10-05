@@ -178,6 +178,7 @@ async fn do_run_golden_test(test: &GoldenTest) -> Result<()> {
 
 // Individual test functions
 #[tokio::test]
+#[cfg_attr(not(target_os = "macos"), ignore = "golden images are made on macOS")]
 async fn test_simple_html_rendering() {
     let test = GoldenTest {
         input_file: "simple.html",
@@ -191,6 +192,7 @@ async fn test_simple_html_rendering() {
 }
 
 #[tokio::test]
+#[cfg_attr(not(target_os = "macos"), ignore = "golden images are made on macOS")]
 async fn test_styled_html_rendering() {
     let test = GoldenTest {
         input_file: "styled.html",
@@ -204,6 +206,7 @@ async fn test_styled_html_rendering() {
 }
 
 #[tokio::test]
+#[cfg_attr(not(target_os = "macos"), ignore = "golden images are made on macOS")]
 async fn test_svg_rendering() {
     let test = GoldenTest {
         input_file: "svg.svg",
@@ -217,6 +220,7 @@ async fn test_svg_rendering() {
 }
 
 #[tokio::test]
+#[cfg_attr(not(target_os = "macos"), ignore = "golden images are made on macOS")]
 async fn test_different_dimensions() {
     let test = GoldenTest {
         input_file: "simple.html",

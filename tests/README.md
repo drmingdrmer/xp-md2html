@@ -7,7 +7,7 @@ Visual regression testing system for HTML/SVG rendering using Chrome headless.
 ```
 tests/
 ├── fixtures/           # Input test files (HTML, SVG)
-├── golden/             # Reference images (auto-generated)
+├── golden/             # Reference images rendered on macOS (auto-generated)
 ├── debug/              # Debug images (generated during test runs)
 └── integration/        # Test code
 ```
@@ -67,7 +67,7 @@ Failed tests save actual image as `{test_name}.actual.png` and show similarity s
 
 - Chrome (headless rendering)
 - ImageMagick (post-processing)
-- Consistent fonts across systems
+- macOS: golden tests are ignored on other OSes
 
 ## Notes
 

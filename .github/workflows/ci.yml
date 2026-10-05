@@ -36,11 +36,13 @@ jobs:
 
 
   unittest:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
 
     strategy:
       fail-fast: false
       matrix:
+        # Golden tests run only on macOS; other OSes ignore them.
+        os: [ubuntu-latest, macos-latest]
         include:
           - toolchain: "nightly"
             features: ""
@@ -70,6 +72,14 @@ jobs:
           RUST_TEST_THREADS: 1
           RUST_LOG: debug
           RUST_BACKTRACE: full
+
+      - name: Upload debug images on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-images-${{ matrix.os }}
+          path: tests/debug/
+          retention-days: 7
 
 
   lint:
