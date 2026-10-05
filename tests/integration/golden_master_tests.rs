@@ -8,6 +8,9 @@ use image::GenericImageView;
 use image_compare::Algorithm;
 use xp_md2html::render::chrome::ChromeRenderer;
 
+/// An unchanged page scores 1.0; a one-character typo in `simple.html` scores about 0.88.
+const SIMILARITY_THRESHOLD: f64 = 0.99;
+
 /// Golden master test configuration
 struct GoldenTest {
     input_file: &'static str,
@@ -62,36 +65,17 @@ fn compare_images(expected_path: &Path, actual_data: &[u8], threshold: f64) -> R
     let expected_dims = expected_image.dimensions();
     let actual_dims = actual_image.dimensions();
 
-    // If dimensions differ, resize both to the larger dimensions
-    let (expected_resized, actual_resized) = if expected_dims != actual_dims {
-        println!(
-            "Image dimensions differ: expected {:?}, got {:?}. Resizing for comparison.",
-            expected_dims, actual_dims
+    if expected_dims != actual_dims {
+        anyhow::bail!(
+            "Image dimensions differ: expected {:?}, got {:?}",
+            expected_dims,
+            actual_dims
         );
-
-        // Use the larger dimensions for both images
-        let target_width = expected_dims.0.max(actual_dims.0);
-        let target_height = expected_dims.1.max(actual_dims.1);
-
-        let expected_resized = expected_image.resize_exact(
-            target_width,
-            target_height,
-            image::imageops::FilterType::Lanczos3,
-        );
-        let actual_resized = actual_image.resize_exact(
-            target_width,
-            target_height,
-            image::imageops::FilterType::Lanczos3,
-        );
-
-        (expected_resized, actual_resized)
-    } else {
-        (expected_image, actual_image)
-    };
+    }
 
     // Convert to grayscale for comparison
-    let expected_gray = expected_resized.to_luma8();
-    let actual_gray = actual_resized.to_luma8();
+    let expected_gray = expected_image.to_luma8();
+    let actual_gray = actual_image.to_luma8();
 
     // Calculate RMS similarity
     let result = image_compare::gray_similarity_structure(
@@ -105,7 +89,7 @@ fn compare_images(expected_path: &Path, actual_data: &[u8], threshold: f64) -> R
     if result.score < threshold {
         // Save the actual image for debugging
         let debug_path = expected_path.with_extension("actual.png");
-        actual_resized.save(&debug_path)?;
+        actual_image.save(&debug_path)?;
 
         anyhow::bail!(
             "Image similarity {:.4} below threshold {:.4}. Actual image saved to: {}",
@@ -185,7 +169,7 @@ async fn test_simple_html_rendering() {
         mime_type: "text/html",
         width: 800,
         height: 600,
-        similarity_threshold: 0.80,
+        similarity_threshold: SIMILARITY_THRESHOLD,
     };
 
     run_golden_test(&test).await.unwrap();
@@ -199,7 +183,7 @@ async fn test_styled_html_rendering() {
         mime_type: "text/html",
         width: 800,
         height: 400,
-        similarity_threshold: 0.80,
+        similarity_threshold: SIMILARITY_THRESHOLD,
     };
 
     run_golden_test(&test).await.unwrap();
@@ -213,7 +197,7 @@ async fn test_svg_rendering() {
         mime_type: "image/svg+xml",
         width: 400,
         height: 300,
-        similarity_threshold: 0.80,
+        similarity_threshold: SIMILARITY_THRESHOLD,
     };
 
     run_golden_test(&test).await.unwrap();
@@ -227,7 +211,7 @@ async fn test_different_dimensions() {
         mime_type: "text/html",
         width: 1200,
         height: 800,
-        similarity_threshold: 0.80,
+        similarity_threshold: SIMILARITY_THRESHOLD,
     };
 
     run_golden_test(&test).await.unwrap();
@@ -242,7 +226,7 @@ async fn test_failure_demo() {
         mime_type: "text/html",
         width: 800,
         height: 600,
-        similarity_threshold: 0.80,
+        similarity_threshold: SIMILARITY_THRESHOLD,
     };
 
     let paths = get_test_paths();

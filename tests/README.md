@@ -16,7 +16,7 @@ tests/
 
 1. **First Run**: Generates golden reference image
 2. **Subsequent Runs**: Compares new render against golden image using RMS similarity (1 - root mean square error of grayscale pixels)
-3. **Pass/Fail**: Test passes if similarity exceeds threshold
+3. **Pass/Fail**: Test passes if both images have the same size and the similarity is at least the threshold
 
 ## Running Tests
 
@@ -47,10 +47,10 @@ struct GoldenTest {
 
 | Test | Input | Threshold | Size |
 |------|-------|-----------|------|
-| `test_simple_html_rendering` | `simple.html` | 0.80 | 800x600 |
-| `test_styled_html_rendering` | `styled.html` | 0.80 | 800x400 |
-| `test_svg_rendering` | `svg.svg` | 0.80 | 400x300 |
-| `test_different_dimensions` | `simple.html` | 0.80 | 1200x800 |
+| `test_simple_html_rendering` | `simple.html` | 0.99 | 800x600 |
+| `test_styled_html_rendering` | `styled.html` | 0.99 | 800x400 |
+| `test_svg_rendering` | `svg.svg` | 0.99 | 400x300 |
+| `test_different_dimensions` | `simple.html` | 0.99 | 1200x800 |
 
 ## Failure Handling
 

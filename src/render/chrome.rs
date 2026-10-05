@@ -210,6 +210,8 @@ impl ChromeRenderer {
             "--disable-web-security",
             "--disable-features=VizDisplayCompositor",
             "--screenshot",
+            // Without it, the scale, and so the image size, follows the machine's display.
+            "--force-device-scale-factor=1",
             &format!("--window-size={},{}", width, height),
             "--default-background-color=00000000",
             markup_file_path.to_str().unwrap(),
