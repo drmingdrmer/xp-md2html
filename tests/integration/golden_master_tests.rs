@@ -241,7 +241,24 @@ async fn test_failure_demo() {
         similarity_threshold: 0.80,
     };
 
+    let paths = get_test_paths();
+
+    let input_path = paths.fixtures_dir.join(test.input_file);
+    let input_content = fs::read_to_string(&input_path).unwrap();
+
+    let actual_data = ChromeRenderer::render_markup(
+        test.mime_type,
+        &input_content,
+        "png",
+        Some(test.width),
+        Some(test.height),
+        None,
+    )
+    .await
+    .unwrap();
+
     // This should fail because we're using a different input file
-    // but comparing against the existing simple_html.png golden image
-    run_golden_test(&test).await.unwrap();
+    // but comparing against the existing simple.png golden image
+    let golden_path = paths.golden_dir.join("simple.png");
+    compare_images(&golden_path, &actual_data, test.similarity_threshold).unwrap();
 }
