@@ -48,6 +48,4 @@ xpmd render -i diagram.svg -o diagram.png -b /path/to/assets
 
 # TODO
 
-- golend_test 里不需要name
-- 测试不同尺寸的图片是否能对比出正确的相似度，如果不可以的话，可能要先在先统一尺寸
-- with Chrome 这个 structure 先设定一个宽度大小，再新建的时候就把 Chrome 路径什么都准备好，而不是在执行的时候准备，执行的时候只接受一个参数，就是输入的内容。
+- `ChromeRenderer` 这个 structure 先设定一个宽度大小，再新建的时候就把 Chrome 路径什么都准备好，而不是在执行的时候准备，执行的时候只接受一个参数，就是输入的内容。

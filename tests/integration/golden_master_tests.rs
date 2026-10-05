@@ -54,7 +54,7 @@ fn get_test_paths() -> TestPaths {
     }
 }
 
-/// Compare two images using SSIM (Structural Similarity Index)
+/// Compare two images using RMS similarity (1 - root mean square error of grayscale pixels)
 fn compare_images(expected_path: &Path, actual_data: &[u8], threshold: f64) -> Result<()> {
     let expected_image = image::open(expected_path)?;
     let actual_image = image::load_from_memory(actual_data)?;
@@ -93,7 +93,7 @@ fn compare_images(expected_path: &Path, actual_data: &[u8], threshold: f64) -> R
     let expected_gray = expected_resized.to_luma8();
     let actual_gray = actual_resized.to_luma8();
 
-    // Calculate structural similarity
+    // Calculate RMS similarity
     let result = image_compare::gray_similarity_structure(
         &Algorithm::RootMeanSquared,
         &expected_gray,

@@ -15,7 +15,7 @@ tests/
 ## How It Works
 
 1. **First Run**: Generates golden reference image
-2. **Subsequent Runs**: Compares new render against golden image using SSIM
+2. **Subsequent Runs**: Compares new render against golden image using RMS similarity (1 - root mean square error of grayscale pixels)
 3. **Pass/Fail**: Test passes if similarity exceeds threshold
 
 ## Running Tests
@@ -27,16 +27,16 @@ cargo test golden_master_tests -- --nocapture
 # Individual tests
 cargo test test_simple_html_rendering -- --nocapture
 
-# Update golden images
-cargo test update_golden_images -- --ignored --nocapture
+# Update golden images: delete them, then re-run the tests
+rm tests/golden/*.png
+cargo test golden_master_tests -- --nocapture
 ```
 
 ## Test Configuration
 
 ```rust
 struct GoldenTest {
-    name: &'static str,              // Test identifier
-    input_file: &'static str,        // File in fixtures/
+    input_file: &'static str,        // File in fixtures/; its stem names the golden image
     mime_type: &'static str,         // Rendering type
     width: u32, height: u32,         // Dimensions
     similarity_threshold: f64,       // Required similarity (0.0-1.0)
@@ -47,16 +47,10 @@ struct GoldenTest {
 
 | Test | Input | Threshold | Size |
 |------|-------|-----------|------|
-| `simple_html` | `simple.html` | 0.95 | 800x600 |
-| `styled_html` | `styled.html` | 0.93 | 800x400 |
-| `svg_test` | `svg.svg` | 0.95 | 400x300 |
-| `simple_large` | `simple.html` | 0.95 | 1200x800 |
-
-## Similarity Thresholds
-
-- **0.95+**: Simple content
-- **0.93+**: Complex styling
-- **0.90+**: Dynamic content
+| `test_simple_html_rendering` | `simple.html` | 0.80 | 800x600 |
+| `test_styled_html_rendering` | `styled.html` | 0.80 | 800x400 |
+| `test_svg_rendering` | `svg.svg` | 0.80 | 400x300 |
+| `test_different_dimensions` | `simple.html` | 0.80 | 1200x800 |
 
 ## Failure Handling
 
