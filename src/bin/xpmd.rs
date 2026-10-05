@@ -5,7 +5,7 @@ use anyhow::Context;
 use anyhow::Result;
 use clap::Parser;
 use clap::Subcommand;
-use xp_md2html::render::with_chrome::WithChrome;
+use xp_md2html::render::chrome::ChromeRenderer;
 
 #[derive(Parser)]
 #[command(name = "xpmd")]
@@ -130,7 +130,7 @@ async fn render_command(
     }
 
     // Render using Chrome
-    let image_data = WithChrome::render_markup(
+    let image_data = ChromeRenderer::render_markup(
         &mime_type,
         &content,
         &format.to_lowercase(),

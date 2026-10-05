@@ -8,9 +8,10 @@ use tempfile::TempDir;
 
 use crate::mime::Mime;
 
-pub struct WithChrome;
+/// Render markup to image using headless chrome browser.
+pub struct ChromeRenderer;
 
-impl WithChrome {
+impl ChromeRenderer {
     /// Render content that is renderable in chrome to image.
     /// Such as html, svg etc into image.
     /// It uses a headless chrome browser via direct command execution.
@@ -281,7 +282,7 @@ mod tests {
     #[test]
     fn test_setup_html_context() {
         let input = "<html><body>Hello</body></html>";
-        let result = WithChrome::setup_html_page_context(input, None);
+        let result = ChromeRenderer::setup_html_page_context(input, None);
 
         assert!(result.contains(r#"<meta http-equiv="Content-Type""#));
         assert!(result.contains("Hello"));
@@ -291,7 +292,7 @@ mod tests {
     fn test_setup_html_context_with_base() {
         let input = "<html><body>Hello</body></html>";
         let base_path = PathBuf::from("/tmp/assets");
-        let result = WithChrome::setup_html_page_context(input, Some(&base_path));
+        let result = ChromeRenderer::setup_html_page_context(input, Some(&base_path));
 
         assert!(result.contains(r#"<base href="file:///tmp/assets/">"#));
     }
@@ -299,10 +300,10 @@ mod tests {
     #[test]
     fn test_get_file_suffix() {
         // Test known MIME types
-        assert_eq!(WithChrome::get_file_suffix("text/html"), "html");
+        assert_eq!(ChromeRenderer::get_file_suffix("text/html"), "html");
 
         // Test fallback
-        assert_eq!(WithChrome::get_file_suffix("custom"), "custom");
+        assert_eq!(ChromeRenderer::get_file_suffix("custom"), "custom");
     }
 
     // Note: Integration tests require Chrome and ImageMagick to be installed

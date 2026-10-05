@@ -6,7 +6,7 @@ use anyhow::Context;
 use anyhow::Result;
 use image::GenericImageView;
 use image_compare::Algorithm;
-use xp_md2html::render::with_chrome::WithChrome;
+use xp_md2html::render::chrome::ChromeRenderer;
 
 /// Golden master test configuration
 struct GoldenTest {
@@ -141,7 +141,7 @@ async fn do_run_golden_test(test: &GoldenTest) -> Result<()> {
         .with_context(|| format!("Failed to read input file: {}", input_path.display()))?;
 
     // Render the image
-    let actual_data = WithChrome::render_markup(
+    let actual_data = ChromeRenderer::render_markup(
         test.mime_type,
         &input_content,
         "png",
