@@ -30,7 +30,7 @@ xpmd render -i input.html -o output.png [OPTIONS]
 -w, --width <WIDTH>    Window width [default: 1000]
     --height <HEIGHT>  Window height [default: 2000]
 -m, --mime <MIME>      MIME type (auto-detected)
--b, --base <BASE>      Base path for assets
+-b, --base <BASE>      Directory for relative asset paths in HTML [default: input file's directory]
 ```
 
 ## Examples
@@ -42,8 +42,8 @@ xpmd render -i page.html -o screenshot.png
 # Custom size and format
 xpmd render -i page.html -o document.pdf -f pdf -w 1200 --height 800
 
-# SVG with assets
-xpmd render -i diagram.svg -o diagram.png -b /path/to/assets
+# HTML whose relative asset paths point into another directory
+xpmd render -i page.html -o page.png -b /path/to/assets
 ```
 
 # TODO

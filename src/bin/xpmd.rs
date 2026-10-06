@@ -1,4 +1,5 @@
 use std::fs;
+use std::path::Path;
 use std::path::PathBuf;
 
 use anyhow::Context;
@@ -44,7 +45,7 @@ enum Commands {
         #[arg(short, long)]
         mime: Option<String>,
 
-        /// Base path for assets (for HTML files with relative paths)
+        /// Directory for relative asset paths in HTML input [default: the input file's directory]
         #[arg(short, long)]
         base: Option<PathBuf>,
     },
@@ -104,6 +105,16 @@ async fn render_command(
             .unwrap_or("text/html")
             .to_string()
     });
+
+    // Relative asset paths in HTML resolve against `--base`, by default the input file's directory.
+    let is_html = mime_type.contains("html");
+    if base.is_some() && !is_html {
+        anyhow::bail!("--base only works with HTML input, not {}", mime_type);
+    }
+    let absolute_input = std::path::absolute(&input)
+        .with_context(|| format!("Failed to resolve input path: {}", input.display()))?;
+    let input_dir = absolute_input.parent().map(Path::to_path_buf);
+    let base = if is_html { base.or(input_dir) } else { None };
 
     // Validate output format
     match format.to_lowercase().as_str() {

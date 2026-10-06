@@ -82,7 +82,7 @@ impl ChromeRenderer {
     }
 
     /// Setup html context, such as encoding and url base
-    fn setup_html_page_context(input: &str, asset_base: Option<&Path>) -> String {
+    fn setup_html_page_context(input: &str, asset_base: Option<&Path>) -> anyhow::Result<String> {
         // Anything before the doctype makes Chrome render in quirks mode, so the tags go after it.
         let (doctype, rest) = Self::split_doctype(input);
 
@@ -92,13 +92,38 @@ impl ChromeRenderer {
 
         // Add base href if asset_base is provided
         if let Some(base_path) = asset_base {
-            let base_href = format!(r#"<base href="file://{}/">"#, base_path.display());
+            let base_url = Self::dir_file_url(base_path)?;
+            let base_href = format!(r#"<base href="{}">"#, base_url);
             html_content.push_str(&base_href);
         }
 
         html_content.push_str(rest);
 
-        html_content
+        Ok(html_content)
+    }
+
+    /// Build a `file://` URL for directory `dir`, with the trailing `/` that `<base href>` needs.
+    fn dir_file_url(dir: &Path) -> anyhow::Result<String> {
+        let absolute = std::path::absolute(dir)
+            .with_context(|| format!("Failed to make asset base absolute: {}", dir.display()))?;
+        let Some(path) = absolute.to_str() else {
+            anyhow::bail!("Asset base is not valid UTF-8: {}", absolute.display());
+        };
+
+        let mut url = "file://".to_string();
+        for byte in path.bytes() {
+            let unreserved = byte.is_ascii_alphanumeric() || b"/-._~".contains(&byte);
+            if unreserved {
+                url.push(char::from(byte));
+            } else {
+                url.push_str(&format!("%{:02X}", byte));
+            }
+        }
+
+        if !url.ends_with('/') {
+            url.push('/');
+        }
+        Ok(url)
     }
 
     /// Split `input` right after its leading doctype; return `("", input)` if there is none.
@@ -189,7 +214,7 @@ impl ChromeRenderer {
     ) -> anyhow::Result<PathBuf> {
         // Process input content
         let markup_content = if mime.contains("html") {
-            Self::setup_html_page_context(markup_content, asset_base)
+            Self::setup_html_page_context(markup_content, asset_base)?
         } else {
             markup_content.to_string()
         };
@@ -308,7 +333,7 @@ mod tests {
     #[test]
     fn test_setup_html_context() {
         let input = "<html><body>Hello</body></html>";
-        let result = ChromeRenderer::setup_html_page_context(input, None);
+        let result = ChromeRenderer::setup_html_page_context(input, None).unwrap();
 
         assert!(result.contains(r#"<meta http-equiv="Content-Type""#));
         assert!(result.contains("Hello"));
@@ -318,16 +343,26 @@ mod tests {
     fn test_setup_html_context_with_base() {
         let input = "<html><body>Hello</body></html>";
         let base_path = PathBuf::from("/tmp/assets");
-        let result = ChromeRenderer::setup_html_page_context(input, Some(&base_path));
+        let result = ChromeRenderer::setup_html_page_context(input, Some(&base_path)).unwrap();
 
         assert!(result.contains(r#"<base href="file:///tmp/assets/">"#));
+    }
+
+    #[test]
+    fn test_dir_file_url() {
+        let escaped = ChromeRenderer::dir_file_url(Path::new("/tmp/a b#1%/")).unwrap();
+        assert_eq!(escaped, "file:///tmp/a%20b%231%25/");
+
+        let relative = ChromeRenderer::dir_file_url(Path::new("assets")).unwrap();
+        let cwd = std::env::current_dir().unwrap();
+        assert_eq!(relative, format!("file://{}/assets/", cwd.display()));
     }
 
     #[test]
     fn test_setup_html_context_after_doctype() {
         let input = "\n<!doctype html>\n<html><body>Hello</body></html>";
         let base_path = PathBuf::from("/tmp/assets");
-        let result = ChromeRenderer::setup_html_page_context(input, Some(&base_path));
+        let result = ChromeRenderer::setup_html_page_context(input, Some(&base_path)).unwrap();
 
         let expected = concat!(
             "\n<!doctype html>",
