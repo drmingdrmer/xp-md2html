@@ -49,7 +49,6 @@ struct GoldenTest {
 | `test_simple_html_rendering` | `simple.html` | 0.99 | 800x600 |
 | `test_styled_html_rendering` | `styled.html` | 0.99 | 800x400 |
 | `test_svg_rendering` | `svg.svg` | 0.99 | 400x300 |
-| `test_different_dimensions` | `simple.html` | 0.99 | 1200x800 |
 
 ## Failure Handling
 

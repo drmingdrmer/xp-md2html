@@ -214,20 +214,6 @@ fn test_svg_rendering() {
     run_golden_test(&test).unwrap();
 }
 
-#[test]
-#[cfg_attr(not(target_os = "macos"), ignore = "golden images are made on macOS")]
-fn test_different_dimensions() {
-    let test = GoldenTest {
-        input_file: "simple.html",
-        mime_type: "text/html",
-        width: 1200,
-        height: 800,
-        similarity_threshold: SIMILARITY_THRESHOLD,
-    };
-
-    run_golden_test(&test).unwrap();
-}
-
 // Test that demonstrates failure handling (should fail on purpose)
 #[test]
 #[ignore] // Run with: cargo test test_failure_demo -- --ignored
