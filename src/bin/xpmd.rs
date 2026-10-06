@@ -7,6 +7,7 @@ use anyhow::Result;
 use clap::Parser;
 use clap::Subcommand;
 use xp_md2html::render::chrome::ChromeRenderer;
+use xp_md2html::render::chrome::RenderConfig;
 
 #[derive(Parser)]
 #[command(name = "xpmd")]
@@ -141,16 +142,14 @@ async fn render_command(
     }
 
     // Render using Chrome
-    let image_data = ChromeRenderer::render_markup(
-        &mime_type,
-        &content,
-        &format.to_lowercase(),
-        Some(width),
-        Some(height),
-        base.as_deref(),
-    )
-    .await
-    .with_context(|| {
+    let config = RenderConfig {
+        mime: mime_type,
+        output_type: format.to_lowercase(),
+        width,
+        height,
+        asset_base: base,
+    };
+    let renderer = ChromeRenderer::new(config).with_context(|| {
         "Failed to render content. Make sure Chrome/Chromium and ImageMagick are installed and accessible.\n\
          Chrome: On macOS: Install from https://www.google.com/chrome/\n\
          Chrome: On Linux: sudo apt install chromium-browser (Ubuntu/Debian) or equivalent\n\
@@ -159,6 +158,7 @@ async fn render_command(
          ImageMagick: On Linux: sudo apt install imagemagick\n\
          ImageMagick: On Windows: Install from https://imagemagick.org/"
     })?;
+    let image_data = renderer.render_markup(&content).await?;
 
     // Write output
     fs::write(&output, &image_data)

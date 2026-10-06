@@ -7,6 +7,7 @@ use anyhow::Result;
 use image::GenericImageView;
 use image_compare::Algorithm;
 use xp_md2html::render::chrome::ChromeRenderer;
+use xp_md2html::render::chrome::RenderConfig;
 
 /// An unchanged page scores 1.0; a one-character typo in `simple.html` scores about 0.88.
 const SIMILARITY_THRESHOLD: f64 = 0.99;
@@ -128,15 +129,15 @@ async fn do_run_golden_test(test: &GoldenTest) -> Result<()> {
         .with_context(|| format!("Failed to read input file: {}", input_path.display()))?;
 
     // Render the image
-    let actual_data = ChromeRenderer::render_markup(
-        test.mime_type,
-        &input_content,
-        "png",
-        Some(test.width),
-        Some(test.height),
-        None,
-    )
-    .await?;
+    let config = RenderConfig {
+        mime: test.mime_type.to_string(),
+        output_type: "png".to_string(),
+        width: test.width,
+        height: test.height,
+        asset_base: None,
+    };
+    let renderer = ChromeRenderer::new(config)?;
+    let actual_data = renderer.render_markup(&input_content).await?;
 
     // Always save debug copy to tests/debug
     {
@@ -244,16 +245,15 @@ async fn test_failure_demo() {
     let input_path = paths.fixtures_dir.join(test.input_file);
     let input_content = fs::read_to_string(&input_path).unwrap();
 
-    let actual_data = ChromeRenderer::render_markup(
-        test.mime_type,
-        &input_content,
-        "png",
-        Some(test.width),
-        Some(test.height),
-        None,
-    )
-    .await
-    .unwrap();
+    let config = RenderConfig {
+        mime: test.mime_type.to_string(),
+        output_type: "png".to_string(),
+        width: test.width,
+        height: test.height,
+        asset_base: None,
+    };
+    let renderer = ChromeRenderer::new(config).unwrap();
+    let actual_data = renderer.render_markup(&input_content).await.unwrap();
 
     // This should fail because we're using a different input file
     // but comparing against the existing simple.png golden image

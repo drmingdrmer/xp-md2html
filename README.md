@@ -45,7 +45,3 @@ xpmd render -i page.html -o document.pdf -f pdf -w 1200 --height 800
 # HTML whose relative asset paths point into another directory
 xpmd render -i page.html -o page.png -b /path/to/assets
 ```
-
-# TODO
-
-- `ChromeRenderer` 这个 structure 先设定一个宽度大小，再新建的时候就把 Chrome 路径什么都准备好，而不是在执行的时候准备，执行的时候只接受一个参数，就是输入的内容。

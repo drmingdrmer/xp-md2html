@@ -8,41 +8,68 @@ use tempfile::TempDir;
 
 use crate::mime::Mime;
 
+/// Settings that every render of one [`ChromeRenderer`] uses.
+pub struct RenderConfig {
+    /// A full mime type such as "image/jpeg" or a shortcut "jpg"
+    pub mime: String,
+    /// Output image type such as "png", "jpg"
+    pub output_type: String,
+    /// The window width to render a page
+    pub width: u32,
+    /// The window height to render a page
+    pub height: u32,
+    /// The path to assets dir. E.g. the image base path in a html page
+    pub asset_base: Option<PathBuf>,
+}
+
 /// Render markup to image using headless chrome browser.
-pub struct ChromeRenderer;
+pub struct ChromeRenderer {
+    config: RenderConfig,
+    /// Chrome executable: a path, or a command name in `PATH`
+    chrome: String,
+    /// ImageMagick command: `magick`, or the older `convert`
+    magick: String,
+}
 
 impl ChromeRenderer {
+    /// Find Chrome and ImageMagick once, for every render with `config`.
+    pub fn new(config: RenderConfig) -> anyhow::Result<Self> {
+        let chrome = Self::find_chrome_executable()?;
+
+        // Find the first available `convert` command:
+        // ImageMagick's `convert` command is deprecated and replaced by `magick convert`
+        let commands = ["magick", "convert"];
+
+        let magick = Self::find_available_command(&commands)?;
+
+        Ok(Self {
+            config,
+            chrome,
+            magick,
+        })
+    }
+
     /// Render content that is renderable in chrome to image.
     /// Such as html, svg etc into image.
     /// It uses a headless chrome browser via direct command execution.
     ///
     /// # Arguments
     ///
-    /// * `mime` - a full mime type such as "image/jpeg" or a shortcut "jpg"
     /// * `input` - content of the input, such as html source or svg data
-    /// * `output_type` - specifies output image type such as "png", "jpg"
-    /// * `width` - specifies the window width to render a page. Default 1000
-    /// * `height` - specifies the window height to render a page. Default 2000
-    /// * `asset_base` - specifies the path to assets dir. E.g. the image base path in a html page
     ///
     /// # Returns
     ///
     /// bytes of the image data
-    pub async fn render_markup(
-        mime: &str,
-        input: &str,
-        output_type: &str,
-        width: Option<u32>,
-        height: Option<u32>,
-        asset_base: Option<&Path>,
-    ) -> anyhow::Result<Vec<u8>> {
+    pub async fn render_markup(&self, input: &str) -> anyhow::Result<Vec<u8>> {
         // Create temporary directory
         let temp_dir = TempDir::new()?;
         let cwd = temp_dir.path();
 
+        let mime = &self.config.mime;
+        let asset_base = self.config.asset_base.as_deref();
         let input_file_path = Self::create_markup_file(cwd, input, mime, asset_base)?;
 
-        let mut cmd = Self::build_chrome_snapshot_cmd(&input_file_path, width, height, cwd)?;
+        let mut cmd = self.build_chrome_snapshot_cmd(&input_file_path, cwd);
 
         let mes = format!(
             "Failed take snapshot with chrome: {:?}; cwd: {}",
@@ -76,7 +103,7 @@ impl ChromeRenderer {
         }
 
         // Process the screenshot based on output type
-        let final_image_data = Self::trim_image(&screenshot_path, output_type)?;
+        let final_image_data = self.trim_image(&screenshot_path)?;
 
         Ok(final_image_data)
     }
@@ -190,8 +217,8 @@ impl ChromeRenderer {
     }
 
     /// Trim image using ImageMagick (matches Python logic)
-    fn trim_image(screenshot_path: &Path, output_type: &str) -> anyhow::Result<Vec<u8>> {
-        let mut cmd = Self::build_trim_image_cmd(screenshot_path, output_type)?;
+    fn trim_image(&self, screenshot_path: &Path) -> anyhow::Result<Vec<u8>> {
+        let mut cmd = self.build_trim_image_cmd(screenshot_path);
 
         let output = cmd
             .output()
@@ -230,18 +257,11 @@ impl ChromeRenderer {
     }
 
     /// Build a chrome command to take screenshot, the output is a png file "screenshot.png" in the current directory
-    fn build_chrome_snapshot_cmd(
-        markup_file_path: &Path,
-        width: Option<u32>,
-        height: Option<u32>,
-        cwd: &Path,
-    ) -> anyhow::Result<Command> {
-        let width = width.unwrap_or(1000);
-        let height = height.unwrap_or(2000);
+    fn build_chrome_snapshot_cmd(&self, markup_file_path: &Path, cwd: &Path) -> Command {
+        let width = self.config.width;
+        let height = self.config.height;
 
-        let chrome_path = Self::find_chrome_executable()?;
-
-        let mut cmd = Command::new(chrome_path);
+        let mut cmd = Command::new(&self.chrome);
 
         cmd.args(vec![
             "--headless",
@@ -267,7 +287,7 @@ impl ChromeRenderer {
         ])
         .current_dir(cwd);
 
-        Ok(cmd)
+        cmd
     }
 
     /// Return the first available command from a list
@@ -300,14 +320,10 @@ impl ChromeRenderer {
     }
 
     /// Build a ImageMagick command to trim image that output directly to stdout
-    fn build_trim_image_cmd(screenshot_path: &Path, output_type: &str) -> anyhow::Result<Command> {
-        // Find the first available `convert` command:
-        // ImageMagick's `convert` command is deprecated and replaced by `magick convert`
-        let commands = ["magick", "convert"];
+    fn build_trim_image_cmd(&self, screenshot_path: &Path) -> Command {
+        let output_type = self.config.output_type.as_str();
 
-        let executable = Self::find_available_command(&commands)?;
-
-        let mut cmd = Command::new(executable);
+        let mut cmd = Command::new(&self.magick);
         cmd.arg(screenshot_path).arg("-trim").arg("+repage");
 
         if output_type == "png" {
@@ -320,7 +336,7 @@ impl ChromeRenderer {
         // Output to stdout
         cmd.arg(format!("{}:-", output_type));
 
-        Ok(cmd)
+        cmd
     }
 }
 
