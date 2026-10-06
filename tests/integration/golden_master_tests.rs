@@ -11,6 +11,9 @@ use xp_md2html::render::chrome::ChromeRenderer;
 /// An unchanged page scores 1.0; a one-character typo in `simple.html` scores about 0.88.
 const SIMILARITY_THRESHOLD: f64 = 0.99;
 
+/// Set this environment variable to `1` to save each render as its golden image instead of comparing.
+const UPDATE_GOLDEN_ENV: &str = "UPDATE_GOLDEN";
+
 /// Golden master test configuration
 struct GoldenTest {
     input_file: &'static str,
@@ -145,12 +148,19 @@ async fn do_run_golden_test(test: &GoldenTest) -> Result<()> {
     // Golden file path
     let golden_path = paths.golden_dir.join(format!("{}.png", test.name()));
 
-    if !golden_path.exists() {
-        // Create golden file on first run
+    let update_golden = std::env::var(UPDATE_GOLDEN_ENV).as_deref() == Ok("1");
+    if update_golden {
         fs::write(&golden_path, &actual_data)?;
-        println!("✨ Created golden file: {}", golden_path.display());
-        println!("   Re-run the test to perform comparison.");
+        println!("✨ Updated golden file: {}", golden_path.display());
         return Ok(());
+    }
+
+    if !golden_path.exists() {
+        anyhow::bail!(
+            "Golden file is missing: {}. Run with {}=1 to create it.",
+            golden_path.display(),
+            UPDATE_GOLDEN_ENV
+        );
     }
 
     // Compare with golden image

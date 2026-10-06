@@ -14,9 +14,9 @@ tests/
 
 ## How It Works
 
-1. **First Run**: Generates golden reference image
-2. **Subsequent Runs**: Compares new render against golden image using RMS similarity (1 - root mean square error of grayscale pixels)
-3. **Pass/Fail**: Test passes if both images have the same size and the similarity is at least the threshold
+1. **With `UPDATE_GOLDEN=1`**: Saves each render as its golden reference image
+2. **Normal Runs**: Compares new render against golden image using RMS similarity (1 - root mean square error of grayscale pixels)
+3. **Pass/Fail**: Test passes if both images have the same size and the similarity is at least the threshold. A missing golden image fails the test
 
 ## Running Tests
 
@@ -27,9 +27,8 @@ cargo test golden_master_tests -- --nocapture
 # Individual tests
 cargo test test_simple_html_rendering -- --nocapture
 
-# Update golden images: delete them, then re-run the tests
-rm tests/golden/*.png
-cargo test golden_master_tests -- --nocapture
+# Update golden images
+UPDATE_GOLDEN=1 cargo test golden_master_tests -- --nocapture
 ```
 
 ## Test Configuration
@@ -60,7 +59,7 @@ Failed tests save actual image as `{test_name}.actual.png` and show similarity s
 
 1. Create input file in `fixtures/`
 2. Add test function with appropriate threshold
-3. Run to generate golden image
+3. Run with `UPDATE_GOLDEN=1` to generate golden image
 4. Commit both files
 
 ## Dependencies
