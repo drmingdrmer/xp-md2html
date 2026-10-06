@@ -7,7 +7,7 @@ use anyhow::Result;
 /// Every JPEG file starts with these bytes.
 const JPEG_MAGIC: [u8; 3] = [0xFF, 0xD8, 0xFF];
 
-/// `xpmd render` prints only its own summary: `ChromeRenderer` prints nothing, and Chrome's noise is captured.
+/// `xpmd render-markup` prints only its own summary: `ChromeRenderer` prints nothing, and Chrome's noise is captured.
 #[test]
 fn test_render_prints_only_its_summary() -> Result<()> {
     let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -16,7 +16,7 @@ fn test_render_prints_only_its_summary() -> Result<()> {
     let output = output_dir.path().join("simple.png");
 
     let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
-        .args(["render", "-w", "800", "--height", "600", "-i"])
+        .args(["render-markup", "-w", "800", "--height", "600", "-i"])
         .arg(&input)
         .arg("-o")
         .arg(&output)
@@ -49,7 +49,7 @@ fn test_render_takes_format_from_output_extension() -> Result<()> {
     let output = output_dir.path().join("simple.jpg");
 
     let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
-        .args(["render", "-i"])
+        .args(["render-markup", "-i"])
         .arg(&input)
         .arg("-o")
         .arg(&output)

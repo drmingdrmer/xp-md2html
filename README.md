@@ -18,7 +18,7 @@ cargo build --release --bin xpmd
 ## Usage
 
 ```bash
-xpmd render -i input.html -o output.png [OPTIONS]
+xpmd render-markup -i input.html -o output.png [OPTIONS]
 ```
 
 ### Options
@@ -37,11 +37,11 @@ xpmd render -i input.html -o output.png [OPTIONS]
 
 ```bash
 # Basic conversion
-xpmd render -i page.html -o screenshot.png
+xpmd render-markup -i page.html -o screenshot.png
 
 # PDF with selectable text, printed on Letter pages; -w and --height do not apply
-xpmd render -i page.html -o document.pdf -f pdf
+xpmd render-markup -i page.html -o document.pdf -f pdf
 
 # HTML whose relative asset paths point into another directory
-xpmd render -i page.html -o page.png -b /path/to/assets
+xpmd render-markup -i page.html -o page.png -b /path/to/assets
 ```

@@ -22,10 +22,10 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Render HTML content to image using headless Chrome
-    Render(RenderArgs),
+    RenderMarkup(RenderArgs),
 }
 
-/// The options of the `render` subcommand.
+/// The options of the `render-markup` subcommand.
 #[derive(Args)]
 struct RenderArgs {
     /// Input file path (HTML content)
@@ -61,7 +61,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Render(args) => {
+        Commands::RenderMarkup(args) => {
             render_command(args)?;
         }
     }
