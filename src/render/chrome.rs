@@ -83,8 +83,12 @@ impl ChromeRenderer {
 
     /// Setup html context, such as encoding and url base
     fn setup_html_page_context(input: &str, asset_base: Option<&Path>) -> String {
+        // Anything before the doctype makes Chrome render in quirks mode, so the tags go after it.
+        let (doctype, rest) = Self::split_doctype(input);
+
         let meta_tag = r#"<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>"#;
-        let mut html_content = meta_tag.to_string();
+        let mut html_content = doctype.to_string();
+        html_content.push_str(meta_tag);
 
         // Add base href if asset_base is provided
         if let Some(base_path) = asset_base {
@@ -92,9 +96,29 @@ impl ChromeRenderer {
             html_content.push_str(&base_href);
         }
 
-        html_content.push_str(input);
+        html_content.push_str(rest);
 
         html_content
+    }
+
+    /// Split `input` right after its leading doctype; return `("", input)` if there is none.
+    fn split_doctype(input: &str) -> (&str, &str) {
+        const DOCTYPE_START: &str = "<!doctype";
+
+        let trimmed = input.trim_ascii_start();
+        let starts_with_doctype = trimmed
+            .get(..DOCTYPE_START.len())
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(DOCTYPE_START));
+        if !starts_with_doctype {
+            return ("", input);
+        }
+
+        let Some(end) = trimmed.find('>') else {
+            return ("", input);
+        };
+
+        let whitespace_len = input.len() - trimmed.len();
+        input.split_at(whitespace_len + end + 1)
     }
 
     /// Get file suffix from MIME type (matches Python logic)
@@ -297,6 +321,33 @@ mod tests {
         let result = ChromeRenderer::setup_html_page_context(input, Some(&base_path));
 
         assert!(result.contains(r#"<base href="file:///tmp/assets/">"#));
+    }
+
+    #[test]
+    fn test_setup_html_context_after_doctype() {
+        let input = "\n<!doctype html>\n<html><body>Hello</body></html>";
+        let base_path = PathBuf::from("/tmp/assets");
+        let result = ChromeRenderer::setup_html_page_context(input, Some(&base_path));
+
+        let expected = concat!(
+            "\n<!doctype html>",
+            r#"<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>"#,
+            r#"<base href="file:///tmp/assets/">"#,
+            "\n<html><body>Hello</body></html>",
+        );
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn test_split_doctype() {
+        let without_doctype = ChromeRenderer::split_doctype("<html></html>");
+        assert_eq!(without_doctype, ("", "<html></html>"));
+
+        let with_doctype = ChromeRenderer::split_doctype(" <!DOCTYPE html><html></html>");
+        assert_eq!(with_doctype, (" <!DOCTYPE html>", "<html></html>"));
+
+        let unclosed = ChromeRenderer::split_doctype("<!DOCTYPE html");
+        assert_eq!(unclosed, ("", "<!DOCTYPE html"));
     }
 
     #[test]
