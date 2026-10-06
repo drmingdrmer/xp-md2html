@@ -52,7 +52,7 @@ struct GoldenTest {
 
 ## Failure Handling
 
-Failed tests save actual image as `{test_name}.actual.png` and show similarity score vs threshold.
+Failed tests save actual image as `debug/{test_name}.actual.png` and show similarity score vs threshold.
 
 ## Adding New Tests
 

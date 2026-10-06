@@ -91,15 +91,10 @@ fn compare_images(expected_path: &Path, actual_data: &[u8], threshold: f64) -> R
     println!("Image similarity score: {:.4}", result.score);
 
     if result.score < threshold {
-        // Save the actual image for debugging
-        let debug_path = expected_path.with_extension("actual.png");
-        actual_image.save(&debug_path)?;
-
         anyhow::bail!(
-            "Image similarity {:.4} below threshold {:.4}. Actual image saved to: {}",
+            "Image similarity {:.4} below threshold {:.4}",
             result.score,
-            threshold,
-            debug_path.display()
+            threshold
         );
     }
 
