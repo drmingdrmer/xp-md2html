@@ -52,6 +52,7 @@ impl ChromeRenderer {
     /// Render content that is renderable in chrome to image.
     /// Such as html, svg etc into image.
     /// It uses a headless chrome browser via direct command execution.
+    /// It blocks the calling thread until Chrome and ImageMagick exit.
     ///
     /// # Arguments
     ///
@@ -60,7 +61,7 @@ impl ChromeRenderer {
     /// # Returns
     ///
     /// bytes of the image data
-    pub async fn render_markup(&self, input: &str) -> anyhow::Result<Vec<u8>> {
+    pub fn render_markup(&self, input: &str) -> anyhow::Result<Vec<u8>> {
         // Create temporary directory
         let temp_dir = TempDir::new()?;
         let cwd = temp_dir.path();
@@ -77,30 +78,24 @@ impl ChromeRenderer {
             cwd.display()
         );
 
-        // Set working directory and environment for the command
+        // Set working directory for the command
         cmd.current_dir(cwd);
-        cmd.env("DISPLAY", ":99"); // Virtual display for headless CI
 
-        let chrome_status = cmd.status().context(mes.clone())?;
+        // Chrome's output is noise, unless Chrome fails.
+        let chrome_output = cmd.output().context(mes.clone())?;
 
-        println!("chrome_status: {:?}; cmd: {:?}", chrome_status, cmd);
-
-        if !chrome_status.success() {
-            anyhow::bail!("{}: exit code: {:?}", mes, chrome_status.code());
+        if !chrome_output.status.success() {
+            let stderr = String::from_utf8_lossy(&chrome_output.stderr);
+            anyhow::bail!(
+                "{}: exit code: {:?}; stderr: {}",
+                mes,
+                chrome_output.status.code(),
+                stderr
+            );
         }
-
-        println!("chrome_status success: {:?}; cmd: {:?}", chrome_status, cmd);
 
         // The default screenshot path.
         let screenshot_path = cwd.join("screenshot.png");
-
-        // show the content of cwd dir for debug
-        println!("cwd: {}", cwd.display());
-        let files = fs::read_dir(cwd).context("Failed to read cwd")?;
-        for file in files {
-            let file = file?;
-            println!("{}", file.path().display());
-        }
 
         let is_pdf = self.config.output_type == "pdf";
         if is_pdf {
@@ -312,26 +307,14 @@ impl ChromeRenderer {
     /// Return the first available command from a list
     fn find_available_command(commands: &[&str]) -> anyhow::Result<String> {
         for cmd in commands {
-            // output debug info about the command:
             let mut probe = Command::new("which");
             probe.arg(cmd);
 
-            let output = probe.output().unwrap();
-
-            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-
-            println!("--------------------------------");
-            println!("command: {:?}", probe);
-            println!("exit code: {}", output.status);
-            println!("stdout:");
-            println!("{}", stdout);
-            println!("stderr:");
-            println!("{}", stderr);
-            println!("--------------------------------");
+            let output = probe
+                .output()
+                .with_context(|| format!("Failed to run {:?}", probe))?;
 
             if output.status.success() {
-                println!("Found command: {} at {}", cmd, stdout);
                 return Ok(cmd.to_string());
             }
         }

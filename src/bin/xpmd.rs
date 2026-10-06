@@ -52,8 +52,7 @@ enum Commands {
     },
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
@@ -66,14 +65,14 @@ async fn main() -> Result<()> {
             mime,
             base,
         } => {
-            render_command(input, output, format, width, height, mime, base).await?;
+            render_command(input, output, format, width, height, mime, base)?;
         }
     }
 
     Ok(())
 }
 
-async fn render_command(
+fn render_command(
     input: PathBuf,
     output: PathBuf,
     format: String,
@@ -158,7 +157,7 @@ async fn render_command(
          ImageMagick: On Linux: sudo apt install imagemagick\n\
          ImageMagick: On Windows: Install from https://imagemagick.org/"
     })?;
-    let image_data = renderer.render_markup(&content).await?;
+    let image_data = renderer.render_markup(&content)?;
 
     // Write output
     fs::write(&output, &image_data)

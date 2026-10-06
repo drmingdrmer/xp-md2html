@@ -4,4 +4,5 @@
 mod integration {
     pub mod golden_master_tests;
     pub mod pdf_tests;
+    pub mod xpmd_tests;
 }

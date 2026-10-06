@@ -107,8 +107,8 @@ fn compare_images(expected_path: &Path, actual_data: &[u8], threshold: f64) -> R
 }
 
 /// Run a golden master test
-async fn run_golden_test(test: &GoldenTest) -> Result<()> {
-    let result = do_run_golden_test(test).await;
+fn run_golden_test(test: &GoldenTest) -> Result<()> {
+    let result = do_run_golden_test(test);
 
     if let Err(e) = &result {
         println!("🔴 Golden test '{}' failed: {}", test.name(), e);
@@ -120,7 +120,7 @@ async fn run_golden_test(test: &GoldenTest) -> Result<()> {
 }
 
 /// Run a golden master test
-async fn do_run_golden_test(test: &GoldenTest) -> Result<()> {
+fn do_run_golden_test(test: &GoldenTest) -> Result<()> {
     let paths = get_test_paths();
 
     // Read input content
@@ -137,7 +137,7 @@ async fn do_run_golden_test(test: &GoldenTest) -> Result<()> {
         asset_base: None,
     };
     let renderer = ChromeRenderer::new(config)?;
-    let actual_data = renderer.render_markup(&input_content).await?;
+    let actual_data = renderer.render_markup(&input_content)?;
 
     // Always save debug copy to tests/debug
     {
@@ -172,9 +172,9 @@ async fn do_run_golden_test(test: &GoldenTest) -> Result<()> {
 }
 
 // Individual test functions
-#[tokio::test]
+#[test]
 #[cfg_attr(not(target_os = "macos"), ignore = "golden images are made on macOS")]
-async fn test_simple_html_rendering() {
+fn test_simple_html_rendering() {
     let test = GoldenTest {
         input_file: "simple.html",
         mime_type: "text/html",
@@ -183,12 +183,12 @@ async fn test_simple_html_rendering() {
         similarity_threshold: SIMILARITY_THRESHOLD,
     };
 
-    run_golden_test(&test).await.unwrap();
+    run_golden_test(&test).unwrap();
 }
 
-#[tokio::test]
+#[test]
 #[cfg_attr(not(target_os = "macos"), ignore = "golden images are made on macOS")]
-async fn test_styled_html_rendering() {
+fn test_styled_html_rendering() {
     let test = GoldenTest {
         input_file: "styled.html",
         mime_type: "text/html",
@@ -197,12 +197,12 @@ async fn test_styled_html_rendering() {
         similarity_threshold: SIMILARITY_THRESHOLD,
     };
 
-    run_golden_test(&test).await.unwrap();
+    run_golden_test(&test).unwrap();
 }
 
-#[tokio::test]
+#[test]
 #[cfg_attr(not(target_os = "macos"), ignore = "golden images are made on macOS")]
-async fn test_svg_rendering() {
+fn test_svg_rendering() {
     let test = GoldenTest {
         input_file: "svg.svg",
         mime_type: "image/svg+xml",
@@ -211,12 +211,12 @@ async fn test_svg_rendering() {
         similarity_threshold: SIMILARITY_THRESHOLD,
     };
 
-    run_golden_test(&test).await.unwrap();
+    run_golden_test(&test).unwrap();
 }
 
-#[tokio::test]
+#[test]
 #[cfg_attr(not(target_os = "macos"), ignore = "golden images are made on macOS")]
-async fn test_different_dimensions() {
+fn test_different_dimensions() {
     let test = GoldenTest {
         input_file: "simple.html",
         mime_type: "text/html",
@@ -225,13 +225,13 @@ async fn test_different_dimensions() {
         similarity_threshold: SIMILARITY_THRESHOLD,
     };
 
-    run_golden_test(&test).await.unwrap();
+    run_golden_test(&test).unwrap();
 }
 
 // Test that demonstrates failure handling (should fail on purpose)
-#[tokio::test]
+#[test]
 #[ignore] // Run with: cargo test test_failure_demo -- --ignored
-async fn test_failure_demo() {
+fn test_failure_demo() {
     let test = GoldenTest {
         input_file: "simple_test.html", // Different input file
         mime_type: "text/html",
@@ -253,7 +253,7 @@ async fn test_failure_demo() {
         asset_base: None,
     };
     let renderer = ChromeRenderer::new(config).unwrap();
-    let actual_data = renderer.render_markup(&input_content).await.unwrap();
+    let actual_data = renderer.render_markup(&input_content).unwrap();
 
     // This should fail because we're using a different input file
     // but comparing against the existing simple.png golden image

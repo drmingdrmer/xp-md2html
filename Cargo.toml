@@ -13,7 +13,6 @@ path = "src/bin/xpmd.rs"
 anyhow = "1.0.97"
 markdown = "1.0.0-alpha.16"
 tempfile = "3.8"
-tokio = { version = "1.0", features = ["full"] }
 clap = { version = "4.4", features = ["derive"] }
 
 [dev-dependencies]
