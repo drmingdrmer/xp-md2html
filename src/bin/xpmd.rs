@@ -30,9 +30,9 @@ enum Commands {
         #[arg(short, long)]
         output: PathBuf,
 
-        /// Output format: png, jpg, jpeg, pdf
-        #[arg(short, long, default_value = "png")]
-        format: String,
+        /// Output format: png, jpg, jpeg, pdf [default: the output file's extension]
+        #[arg(short, long)]
+        format: Option<String>,
 
         /// Window width for rendering
         #[arg(short, long, default_value = "1000")]
@@ -75,7 +75,7 @@ fn main() -> Result<()> {
 fn render_command(
     input: PathBuf,
     output: PathBuf,
-    format: String,
+    format: Option<String>,
     width: u32,
     height: u32,
     mime: Option<String>,
@@ -116,14 +116,7 @@ fn render_command(
     let input_dir = absolute_input.parent().map(Path::to_path_buf);
     let base = if is_html { base.or(input_dir) } else { None };
 
-    // Validate output format
-    match format.to_lowercase().as_str() {
-        "png" | "jpg" | "jpeg" | "pdf" => {}
-        _ => anyhow::bail!(
-            "Unsupported output format: {}. Supported: png, jpg, jpeg, pdf",
-            format
-        ),
-    }
+    let format = resolve_format(format.as_deref(), &output)?;
 
     println!(
         "Rendering {} to {} ({}x{}, format: {})",
@@ -143,7 +136,7 @@ fn render_command(
     // Render using Chrome
     let config = RenderConfig {
         mime: mime_type,
-        output_type: format.to_lowercase(),
+        output_type: format.to_string(),
         width,
         height,
         asset_base: base,
@@ -167,4 +160,112 @@ fn render_command(
     println!("📊 Output size: {} bytes", image_data.len());
 
     Ok(())
+}
+
+/// The output formats that `-f` and the output file's extension accept, as error messages list them.
+const SUPPORTED_FORMATS: &str = "png, jpg, jpeg, pdf";
+
+/// Return the output format that `name`, a `-f` value or a file extension, names.
+fn format_of(name: &str) -> Option<&'static str> {
+    match name.to_lowercase().as_str() {
+        "png" => Some("png"),
+        "jpg" | "jpeg" => Some("jpg"),
+        "pdf" => Some("pdf"),
+        _ => None,
+    }
+}
+
+/// Return the output format that `-f` names, by default the one that the extension of `output` names.
+///
+/// When `-f` and the extension both name a format, the two must agree.
+fn resolve_format(format: Option<&str>, output: &Path) -> Result<&'static str> {
+    let extension = output.extension().and_then(|ext| ext.to_str());
+    let extension_format = extension.and_then(format_of);
+
+    let Some(format) = format else {
+        return extension_format.with_context(|| {
+            format!(
+                "Cannot tell the output format from {}. Pass -f with one of: {}",
+                output.display(),
+                SUPPORTED_FORMATS
+            )
+        });
+    };
+
+    let Some(flag_format) = format_of(format) else {
+        anyhow::bail!(
+            "Unsupported output format: {}. Supported: {}",
+            format,
+            SUPPORTED_FORMATS
+        );
+    };
+
+    let extension_agrees = extension_format.is_none() || extension_format == Some(flag_format);
+    if !extension_agrees {
+        anyhow::bail!(
+            "-f {} does not match the extension of {}",
+            format,
+            output.display()
+        );
+    }
+    Ok(flag_format)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_format_from_extension() -> Result<()> {
+        let format = resolve_format(None, Path::new("out.JPG"))?;
+        assert_eq!(format, "jpg");
+
+        let format = resolve_format(None, Path::new("out.jpeg"))?;
+        assert_eq!(format, "jpg");
+
+        let format = resolve_format(None, Path::new("out.pdf"))?;
+        assert_eq!(format, "pdf");
+        Ok(())
+    }
+
+    #[test]
+    fn test_resolve_format_from_flag() -> Result<()> {
+        let format = resolve_format(Some("PNG"), Path::new("out"))?;
+        assert_eq!(format, "png");
+
+        let format = resolve_format(Some("png"), Path::new("out.tmp"))?;
+        assert_eq!(format, "png");
+
+        let format = resolve_format(Some("jpeg"), Path::new("out.jpg"))?;
+        assert_eq!(format, "jpg");
+        Ok(())
+    }
+
+    #[test]
+    fn test_resolve_format_errors() {
+        let result = resolve_format(None, Path::new("out"));
+        let message = result.unwrap_err().to_string();
+        assert_eq!(
+            message,
+            "Cannot tell the output format from out. Pass -f with one of: png, jpg, jpeg, pdf"
+        );
+
+        let result = resolve_format(None, Path::new("out.gif"));
+        let message = result.unwrap_err().to_string();
+        assert_eq!(
+            message,
+            "Cannot tell the output format from out.gif. Pass -f with one of: png, jpg, jpeg, pdf"
+        );
+
+        let result = resolve_format(Some("png"), Path::new("out.jpg"));
+        let message = result.unwrap_err().to_string();
+        assert_eq!(message, "-f png does not match the extension of out.jpg");
+
+        let result = resolve_format(Some("gif"), Path::new("out.gif"));
+        let message = result.unwrap_err().to_string();
+        assert_eq!(
+            message,
+            "Unsupported output format: gif. Supported: png, jpg, jpeg, pdf"
+        );
+    }
 }

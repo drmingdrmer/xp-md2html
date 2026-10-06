@@ -26,7 +26,7 @@ xpmd render -i input.html -o output.png [OPTIONS]
 ```
 -i, --input <INPUT>    Input file (HTML/SVG)
 -o, --output <OUTPUT>  Output file
--f, --format <FORMAT>  png, jpg, jpeg, pdf [default: png]
+-f, --format <FORMAT>  png, jpg, jpeg, pdf [default: output file's extension]
 -w, --width <WIDTH>    Window width [default: 1000]
     --height <HEIGHT>  Window height [default: 2000]
 -m, --mime <MIME>      MIME type (auto-detected)
