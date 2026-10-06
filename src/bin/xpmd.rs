@@ -13,7 +13,7 @@ use xp_md2html::render::chrome::RenderConfig;
 #[derive(Parser)]
 #[command(name = "xpmd")]
 #[command(about = "A markdown to HTML/image converter with Chrome rendering")]
-#[command(version = "0.1.0")]
+#[command(version)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
