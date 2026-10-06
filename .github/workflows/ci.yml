@@ -59,7 +59,7 @@ jobs:
           override: true
 
 
-      - uses: mfinelli/setup-imagemagick@v6
+      - uses: mfinelli/setup-imagemagick@v8
       - run: magick drdrxp.jpg -resize 100x100 output.jpg
 
       - name: Test
