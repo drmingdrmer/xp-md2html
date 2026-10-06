@@ -39,8 +39,8 @@ xpmd render -i input.html -o output.png [OPTIONS]
 # Basic conversion
 xpmd render -i page.html -o screenshot.png
 
-# Custom size and format
-xpmd render -i page.html -o document.pdf -f pdf -w 1200 --height 800
+# PDF with selectable text, printed on Letter pages; -w and --height do not apply
+xpmd render -i page.html -o document.pdf -f pdf
 
 # HTML whose relative asset paths point into another directory
 xpmd render -i page.html -o page.png -b /path/to/assets

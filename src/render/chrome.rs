@@ -102,6 +102,15 @@ impl ChromeRenderer {
             println!("{}", file.path().display());
         }
 
+        let is_pdf = self.config.output_type == "pdf";
+        if is_pdf {
+            // The default `--print-to-pdf` path.
+            let pdf_path = cwd.join("output.pdf");
+            let pdf = fs::read(&pdf_path)
+                .with_context(|| format!("Failed to read PDF: {}", pdf_path.display()))?;
+            return Ok(pdf);
+        }
+
         // Process the screenshot based on output type
         let final_image_data = self.trim_image(&screenshot_path)?;
 
@@ -256,10 +265,20 @@ impl ChromeRenderer {
         Ok(markup_file_path)
     }
 
-    /// Build a chrome command to take screenshot, the output is a png file "screenshot.png" in the current directory
+    /// Build a chrome command to take screenshot, the output is a png file "screenshot.png" in the current directory,
+    /// or "output.pdf" for a PDF
     fn build_chrome_snapshot_cmd(&self, markup_file_path: &Path, cwd: &Path) -> Command {
         let width = self.config.width;
         let height = self.config.height;
+
+        // A PDF is printed so that its text stays text; a screenshot would make it an image.
+        let is_pdf = self.config.output_type == "pdf";
+        let capture: &[&str] = if is_pdf {
+            // Without `--no-pdf-header-footer`, Chrome adds the date, the file URL and page numbers.
+            &["--print-to-pdf", "--no-pdf-header-footer"]
+        } else {
+            &["--screenshot"]
+        };
 
         let mut cmd = Command::new(&self.chrome);
 
@@ -278,13 +297,13 @@ impl ChromeRenderer {
             "--no-default-browser-check",
             "--disable-web-security",
             "--disable-features=VizDisplayCompositor",
-            "--screenshot",
             // Without it, the scale, and so the image size, follows the machine's display.
             "--force-device-scale-factor=1",
             &format!("--window-size={},{}", width, height),
             "--default-background-color=00000000",
             markup_file_path.to_str().unwrap(),
         ])
+        .args(capture)
         .current_dir(cwd);
 
         cmd
