@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use anyhow::Result;
+use clap::Args;
 use clap::Parser;
 use clap::Subcommand;
 use xp_md2html::render::chrome::ChromeRenderer;
@@ -21,66 +22,64 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Render HTML content to image using headless Chrome
-    Render {
-        /// Input file path (HTML content)
-        #[arg(short, long)]
-        input: PathBuf,
+    Render(RenderArgs),
+}
 
-        /// Output file path
-        #[arg(short, long)]
-        output: PathBuf,
+/// The options of the `render` subcommand.
+#[derive(Args)]
+struct RenderArgs {
+    /// Input file path (HTML content)
+    #[arg(short, long)]
+    input: PathBuf,
 
-        /// Output format: png, jpg, jpeg, pdf [default: the output file's extension]
-        #[arg(short, long)]
-        format: Option<String>,
+    /// Output file path
+    #[arg(short, long)]
+    output: PathBuf,
 
-        /// Window width for rendering
-        #[arg(short, long, default_value = "1000")]
-        width: u32,
+    /// Output format: png, jpg, jpeg, pdf [default: the output file's extension]
+    #[arg(short, long)]
+    format: Option<String>,
 
-        /// Window height for rendering  
-        #[arg(long, default_value = "2000")]
-        height: u32,
+    /// Window width for rendering
+    #[arg(short, long, default_value = "1000")]
+    width: u32,
 
-        /// MIME type of input content (auto-detected if not specified)
-        #[arg(short, long)]
-        mime: Option<String>,
+    /// Window height for rendering
+    #[arg(long, default_value = "2000")]
+    height: u32,
 
-        /// Directory for relative asset paths in HTML input [default: the input file's directory]
-        #[arg(short, long)]
-        base: Option<PathBuf>,
-    },
+    /// MIME type of input content (auto-detected if not specified)
+    #[arg(short, long)]
+    mime: Option<String>,
+
+    /// Directory for relative asset paths in HTML input [default: the input file's directory]
+    #[arg(short, long)]
+    base: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Render {
-            input,
-            output,
-            format,
-            width,
-            height,
-            mime,
-            base,
-        } => {
-            render_command(input, output, format, width, height, mime, base)?;
+        Commands::Render(args) => {
+            render_command(args)?;
         }
     }
 
     Ok(())
 }
 
-fn render_command(
-    input: PathBuf,
-    output: PathBuf,
-    format: Option<String>,
-    width: u32,
-    height: u32,
-    mime: Option<String>,
-    base: Option<PathBuf>,
-) -> Result<()> {
+fn render_command(args: RenderArgs) -> Result<()> {
+    let RenderArgs {
+        input,
+        output,
+        format,
+        width,
+        height,
+        mime,
+        base,
+    } = args;
+
     // Validate input file exists
     if !input.exists() {
         anyhow::bail!("Input file does not exist: {}", input.display());
