@@ -2,6 +2,7 @@
 
 pub mod download_images;
 pub mod embed_markdown;
+pub mod image_to_asset;
 pub mod table_to_image;
 
 use std::path::Component;
@@ -39,6 +40,8 @@ pub enum Action {
     DownloadImages,
     /// Replace a paragraph that holds only `![](x.md)` with the content of `x.md`.
     EmbedMarkdown,
+    /// Copy every local image into the assets dir and link the copy.
+    ImageToAsset,
 }
 
 impl FromStr for Action {
@@ -49,6 +52,7 @@ impl FromStr for Action {
             "table-to-image" => Ok(Self::TableToImage),
             "download-images" => Ok(Self::DownloadImages),
             "embed-markdown" => Ok(Self::EmbedMarkdown),
+            "image-to-asset" => Ok(Self::ImageToAsset),
             _ => Err(format!("unknown action: {name}")),
         }
     }
@@ -66,6 +70,7 @@ impl Action {
             Self::TableToImage => table_to_image::apply(arena, root, ctx),
             Self::DownloadImages => download_images::apply(root, ctx),
             Self::EmbedMarkdown => embed_markdown::apply(arena, root, ctx),
+            Self::ImageToAsset => image_to_asset::apply(root, ctx),
         }
     }
 }

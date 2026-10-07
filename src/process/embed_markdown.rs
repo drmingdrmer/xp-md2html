@@ -97,7 +97,7 @@ fn embedded_url(node: Node<'_>) -> Option<String> {
 
 /// `/x` is relative to `root_dir`, the input file's directory; any other path is relative to
 /// `base_dir`, the directory of the file that holds the link.
-fn resolve(root_dir: &Path, base_dir: &Path, url: &str) -> PathBuf {
+pub(super) fn resolve(root_dir: &Path, base_dir: &Path, url: &str) -> PathBuf {
     if let Some(from_root) = url.strip_prefix('/') {
         return root_dir.join(from_root);
     }
@@ -123,7 +123,7 @@ fn rebase_urls(root: Node<'_>, from_dir: &Path, to_dir: &Path) -> anyhow::Result
 }
 
 /// A URL that is a relative path: not a scheme (`https:`, `mailto:`), a root path `/x`, or an anchor `#x`.
-fn is_relative(url: &str) -> bool {
+pub(super) fn is_relative(url: &str) -> bool {
     if url.starts_with('/') || url.starts_with('#') {
         return false;
     }
