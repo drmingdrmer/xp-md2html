@@ -1,6 +1,8 @@
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 use std::process::Command;
+use std::process::Stdio;
 
 use anyhow::Result;
 
@@ -44,5 +46,30 @@ fn test_render_code_to_stdout_and_file() -> Result<()> {
     // Without `-l`, the extension `rs` of `-i` picks the language, so the page is the same.
     let written = fs::read_to_string(&output)?;
     assert_eq!(written, stdout);
+    Ok(())
+}
+
+/// Without `-i`, `render-code` reads the code from stdin.
+#[test]
+fn test_render_code_reads_stdin() -> Result<()> {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["render-code", "-l", "rust"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let mut stdin = child.stdin.take().unwrap();
+    stdin.write_all(b"fn main() {}\n")?;
+    drop(stdin);
+    let result = child.wait_with_output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let stdout = String::from_utf8(result.stdout)?;
+    assert!(
+        stdout.contains("<span style=\"color:#b48ead;\">fn </span>"),
+        "{stdout}"
+    );
     Ok(())
 }

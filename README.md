@@ -21,12 +21,14 @@ cargo build --release --bin xpmd
 xpmd render-markup -i input.html -o output.png [OPTIONS]
 ```
 
+Every `render-*` subcommand reads stdin without `-i` and writes stdout without `-o`.
+
 ### Options
 
 ```
--i, --input <INPUT>    Input file (HTML/SVG)
--o, --output <OUTPUT>  Output file
--f, --format <FORMAT>  png, jpg, jpeg, pdf [default: output file's extension]
+-i, --input <INPUT>    Input file (HTML/SVG) [default: stdin]
+-o, --output <OUTPUT>  Output file [default: stdout]
+-f, --format <FORMAT>  png, jpg, jpeg, pdf [default: output file's extension, else png]
 -w, --width <WIDTH>    Window width [default: 1000]
     --height <HEIGHT>  Window height [default: 2000]
 -m, --mime <MIME>      MIME type (auto-detected)
