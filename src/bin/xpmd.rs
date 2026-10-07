@@ -7,6 +7,8 @@ use anyhow::Result;
 use clap::Args;
 use clap::Parser;
 use clap::Subcommand;
+use xp_md2html::process::Action;
+use xp_md2html::process::ActionContext;
 use xp_md2html::render::chrome::ChromeRenderer;
 use xp_md2html::render::chrome::RenderConfig;
 
@@ -23,6 +25,8 @@ struct Cli {
 enum Commands {
     /// Render HTML content to image using headless Chrome
     RenderMarkup(RenderArgs),
+    /// Apply actions to a markdown file in order and write the result
+    Process(ProcessArgs),
 }
 
 /// The options of the `render-markup` subcommand.
@@ -57,12 +61,52 @@ struct RenderArgs {
     base: Option<PathBuf>,
 }
 
+/// The options of the `process` subcommand.
+#[derive(Args)]
+struct ProcessArgs {
+    /// Input markdown file
+    #[arg(short, long)]
+    input: PathBuf,
+
+    /// Output markdown file
+    #[arg(short, long)]
+    output: PathBuf,
+
+    /// Directory for the files the actions create [default: the output file's directory]
+    #[arg(long)]
+    assets: Option<PathBuf>,
+
+    /// Window width for rendering images
+    #[arg(short, long, default_value = "1000")]
+    width: u32,
+
+    /// Window height for rendering images
+    #[arg(long, default_value = "2000")]
+    height: u32,
+
+    /// An action to apply, in the given order; one of: table-to-image
+    #[arg(long = "action", required = true)]
+    actions: Vec<Action>,
+}
+
+/// The context of the error when Chrome or ImageMagick is missing.
+const INSTALL_HELP: &str = "Failed to render content. Make sure Chrome/Chromium and ImageMagick are installed and accessible.\n\
+    Chrome: On macOS: Install from https://www.google.com/chrome/\n\
+    Chrome: On Linux: sudo apt install chromium-browser (Ubuntu/Debian) or equivalent\n\
+    Chrome: On Windows: Install from https://www.google.com/chrome/\n\
+    ImageMagick: On macOS: brew install imagemagick\n\
+    ImageMagick: On Linux: sudo apt install imagemagick\n\
+    ImageMagick: On Windows: Install from https://imagemagick.org/";
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
         Commands::RenderMarkup(args) => {
             render_command(args)?;
+        }
+        Commands::Process(args) => {
+            process_command(args)?;
         }
     }
 
@@ -140,15 +184,7 @@ fn render_command(args: RenderArgs) -> Result<()> {
         height,
         asset_base: base,
     };
-    let renderer = ChromeRenderer::new(config).with_context(|| {
-        "Failed to render content. Make sure Chrome/Chromium and ImageMagick are installed and accessible.\n\
-         Chrome: On macOS: Install from https://www.google.com/chrome/\n\
-         Chrome: On Linux: sudo apt install chromium-browser (Ubuntu/Debian) or equivalent\n\
-         Chrome: On Windows: Install from https://www.google.com/chrome/\n\
-         ImageMagick: On macOS: brew install imagemagick\n\
-         ImageMagick: On Linux: sudo apt install imagemagick\n\
-         ImageMagick: On Windows: Install from https://imagemagick.org/"
-    })?;
+    let renderer = ChromeRenderer::new(config).context(INSTALL_HELP)?;
     let image_data = renderer.render_markup(&content)?;
 
     // Write output
@@ -157,6 +193,69 @@ fn render_command(args: RenderArgs) -> Result<()> {
 
     println!("✅ Successfully rendered to: {}", output.display());
     println!("📊 Output size: {} bytes", image_data.len());
+
+    Ok(())
+}
+
+fn process_command(args: ProcessArgs) -> Result<()> {
+    let ProcessArgs {
+        input,
+        output,
+        assets,
+        width,
+        height,
+        actions,
+    } = args;
+
+    let markdown = fs::read_to_string(&input)
+        .with_context(|| format!("Failed to read input file: {}", input.display()))?;
+
+    let absolute_output = std::path::absolute(&output)
+        .with_context(|| format!("Failed to resolve output path: {}", output.display()))?;
+    let output_dir = absolute_output
+        .parent()
+        .with_context(|| format!("Output path has no directory: {}", output.display()))?
+        .to_path_buf();
+    let stem = absolute_output
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .with_context(|| format!("Output path has no file name: {}", output.display()))?
+        .to_string();
+    let assets_dir = assets.unwrap_or_else(|| output_dir.clone());
+
+    fs::create_dir_all(&output_dir).with_context(|| {
+        format!(
+            "Failed to create output directory: {}",
+            output_dir.display()
+        )
+    })?;
+    fs::create_dir_all(&assets_dir).with_context(|| {
+        format!(
+            "Failed to create assets directory: {}",
+            assets_dir.display()
+        )
+    })?;
+
+    let config = RenderConfig {
+        mime: "text/html".to_string(),
+        output_type: "png".to_string(),
+        width,
+        height,
+        asset_base: None,
+    };
+    let renderer = ChromeRenderer::new(config).context(INSTALL_HELP)?;
+    let ctx = ActionContext {
+        assets_dir,
+        output_dir,
+        stem,
+        renderer,
+    };
+
+    let processed = xp_md2html::process::process_markdown(&markdown, &actions, &ctx)?;
+    fs::write(&output, processed)
+        .with_context(|| format!("Failed to write output file: {}", output.display()))?;
+
+    println!("✅ Successfully wrote: {}", output.display());
 
     Ok(())
 }

@@ -11,7 +11,9 @@ path = "src/bin/xpmd.rs"
 
 [dependencies]
 anyhow = "1.0.97"
+comrak = { version = "0.56.0", default-features = false }
 markdown = "1.0.0-alpha.16"
+sha2 = "0.10"
 tempfile = "3.8"
 clap = { version = "4.4", features = ["derive"] }
 
