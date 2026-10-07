@@ -45,6 +45,40 @@ fn test_process_table_to_image() -> Result<()> {
     Ok(())
 }
 
+/// `xpmd process --action mermaid-to-image` writes the diagram's PNG into `--assets`, named by the
+/// hash of the block's content, and links it where the block was.
+#[test]
+fn test_process_mermaid_to_image() -> Result<()> {
+    let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let input = root_dir.join("tests/fixtures/mermaid.md");
+    let output_dir = tempfile::tempdir()?;
+    let output = output_dir.path().join("post.md");
+    let assets = output_dir.path().join("assets");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "mermaid-to-image", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("--assets")
+        .arg(&assets)
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let expected_markdown = "# Flow\n\n\
+        ![](assets/post-mermaid-2a403c0fada7.png)\n\n\
+        Done.\n";
+    assert_eq!(markdown, expected_markdown);
+
+    let image = fs::read(assets.join("post-mermaid-2a403c0fada7.png"))?;
+    let magic = image.get(..PNG_MAGIC.len());
+    assert_eq!(magic, Some(PNG_MAGIC.as_slice()));
+    Ok(())
+}
+
 /// `xpmd process --action table-to-html` writes the table as a bare `<table>` of rows.
 #[test]
 fn test_process_table_to_html() -> Result<()> {

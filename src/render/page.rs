@@ -3,6 +3,8 @@
 
 use anyhow::Context;
 
+use crate::render::chrome::ChromeRenderer;
+
 /// The pixels around the SVG in the page of [`svg_page`]; the trim removes them again.
 pub const PADDING: u32 = 8;
 
@@ -20,6 +22,14 @@ pub fn svg_page(svg: &str) -> String {
          {svg}\n\
          </body></html>\n"
     )
+}
+
+/// The image of `svg` that `renderer` makes, in a window that fits the SVG plus [`PADDING`]; a
+/// fixed window would cut a wide diagram off.
+pub fn svg_to_image(renderer: &ChromeRenderer, svg: &str) -> anyhow::Result<Vec<u8>> {
+    let (width, height) = svg_size(svg)?;
+    let fitted = renderer.with_window(width + 2 * PADDING, height + 2 * PADDING);
+    fitted.render_markup(&svg_page(svg))
 }
 
 /// The width and height in CSS pixels of `svg`: from the `width` and `height` attributes in

@@ -23,9 +23,7 @@ use xp_md2html::render::markdown::markdown_to_html;
 use xp_md2html::render::math::math_page;
 use xp_md2html::render::math::math_to_svg;
 use xp_md2html::render::mermaid::mermaid_to_svg;
-use xp_md2html::render::page;
-use xp_md2html::render::page::svg_page;
-use xp_md2html::render::page::svg_size;
+use xp_md2html::render::page::svg_to_image;
 
 #[derive(Parser)]
 #[command(name = "xpmd")]
@@ -117,7 +115,7 @@ struct ProcessArgs {
     #[arg(long, default_value = "2")]
     scale: u32,
 
-    /// An action to apply, in the given order; one of: table-to-image, download-images, embed-markdown, image-to-asset, table-to-html
+    /// An action to apply, in the given order; one of: table-to-image, download-images, embed-markdown, image-to-asset, table-to-html, mermaid-to-image
     #[arg(long = "action", required = true)]
     actions: Vec<Action>,
 }
@@ -406,30 +404,23 @@ fn render_diagram_command(
     let source = read_input(input.as_deref())?;
     let format = resolve_svg_format(format.as_deref(), output.as_deref())?;
 
-    let renderer_for = |width: u32, height: u32| -> Result<ChromeRenderer> {
-        let config = RenderConfig {
-            mime: "text/html".to_string(),
-            output_type: format.to_string(),
-            width,
-            height,
-            scale,
-            asset_base: None,
-        };
-        ChromeRenderer::new(config).context(INSTALL_HELP)
+    // The DOM dump that makes the SVG does not depend on the window; the image gets its own.
+    let config = RenderConfig {
+        mime: "text/html".to_string(),
+        output_type: format.to_string(),
+        width: MATH_WINDOW_WIDTH,
+        height: MATH_WINDOW_HEIGHT,
+        scale,
+        asset_base: None,
     };
-
-    // The DOM dump that makes the SVG does not depend on the window.
-    let renderer = renderer_for(MATH_WINDOW_WIDTH, MATH_WINDOW_HEIGHT)?;
+    let renderer = ChromeRenderer::new(config).context(INSTALL_HELP)?;
     let mut svg = to_svg(&renderer, &source)?;
     if format == "svg" {
         svg.push('\n');
         return write_output(output.as_deref(), svg.as_bytes());
     }
 
-    // The image window fits the diagram; a fixed window would cut a wide diagram off.
-    let (width, height) = svg_size(&svg)?;
-    let renderer = renderer_for(width + 2 * page::PADDING, height + 2 * page::PADDING)?;
-    let image = renderer.render_markup(&svg_page(&svg))?;
+    let image = svg_to_image(&renderer, &svg)?;
     write_output(output.as_deref(), &image)
 }
 

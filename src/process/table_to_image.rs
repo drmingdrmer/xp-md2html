@@ -3,7 +3,6 @@
 use std::fs;
 
 use anyhow::Context;
-use comrak::nodes::NodeLink;
 use comrak::nodes::NodeValue;
 use comrak::Arena;
 use comrak::Node;
@@ -45,13 +44,7 @@ pub fn replace_tables<'a>(
 
     for table in tables {
         let url = image_url(table)?;
-        let link = NodeLink {
-            url,
-            title: String::new(),
-        };
-        let image = arena.alloc(NodeValue::Image(Box::new(link)).into());
-        let paragraph = arena.alloc(NodeValue::Paragraph.into());
-        paragraph.append(image);
+        let paragraph = super::image_paragraph(arena, url);
         table.insert_after(paragraph);
         table.detach();
     }

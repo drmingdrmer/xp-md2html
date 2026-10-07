@@ -14,6 +14,7 @@ use crate::mime::Mime;
 const VIRTUAL_TIME_BUDGET: &str = "--virtual-time-budget=5000";
 
 /// Settings that every render of one [`ChromeRenderer`] uses.
+#[derive(Clone)]
 pub struct RenderConfig {
     /// A full mime type such as "image/jpeg" or a shortcut "jpg"
     pub mime: String,
@@ -98,6 +99,19 @@ impl ChromeRenderer {
         let final_image_data = self.trim_image(&screenshot_path)?;
 
         Ok(final_image_data)
+    }
+
+    /// A renderer like this one, with a window of `width` by `height` pixels; a diagram needs the
+    /// window that fits it, which is known only once it is drawn.
+    pub fn with_window(&self, width: u32, height: u32) -> Self {
+        let mut config = self.config.clone();
+        config.width = width;
+        config.height = height;
+        Self {
+            config,
+            chrome: self.chrome.clone(),
+            magick: self.magick.clone(),
+        }
     }
 
     /// Return the DOM of `input` as Chrome serializes it once the page has loaded and its scripts have run.

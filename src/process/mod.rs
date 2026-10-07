@@ -3,6 +3,7 @@
 pub mod download_images;
 pub mod embed_markdown;
 pub mod image_to_asset;
+pub mod mermaid_to_image;
 pub mod table_to_html;
 pub mod table_to_image;
 
@@ -12,6 +13,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use anyhow::Context;
+use comrak::nodes::NodeLink;
+use comrak::nodes::NodeValue;
 use comrak::Arena;
 use comrak::Node;
 use comrak::Options;
@@ -45,6 +48,8 @@ pub enum Action {
     ImageToAsset,
     /// Replace every table with a bare `<table>`.
     TableToHtml,
+    /// Replace every ```` ```mermaid ```` block with a PNG of the diagram.
+    MermaidToImage,
 }
 
 impl FromStr for Action {
@@ -57,6 +62,7 @@ impl FromStr for Action {
             "embed-markdown" => Ok(Self::EmbedMarkdown),
             "image-to-asset" => Ok(Self::ImageToAsset),
             "table-to-html" => Ok(Self::TableToHtml),
+            "mermaid-to-image" => Ok(Self::MermaidToImage),
             _ => Err(format!("unknown action: {name}")),
         }
     }
@@ -76,6 +82,7 @@ impl Action {
             Self::EmbedMarkdown => embed_markdown::apply(arena, root, ctx),
             Self::ImageToAsset => image_to_asset::apply(root, ctx),
             Self::TableToHtml => table_to_html::apply(arena, root),
+            Self::MermaidToImage => mermaid_to_image::apply(arena, root, ctx),
         }
     }
 }
@@ -92,6 +99,18 @@ pub fn gfm_math_options() -> Options<'static> {
     options.extension.math_code = true;
     options.extension.front_matter_delimiter = Some("---".to_string());
     options
+}
+
+/// A paragraph that holds one image of `url`, the block that replaces a table or a diagram.
+pub(crate) fn image_paragraph<'a>(arena: &'a Arena<'a>, url: String) -> Node<'a> {
+    let link = NodeLink {
+        url,
+        title: String::new(),
+    };
+    let image = arena.alloc(NodeValue::Image(Box::new(link)).into());
+    let paragraph = arena.alloc(NodeValue::Paragraph.into());
+    paragraph.append(image);
+    paragraph
 }
 
 /// Parse `markdown`, apply `actions` in order, and return the markdown of the edited tree.
