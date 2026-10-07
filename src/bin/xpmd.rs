@@ -84,7 +84,7 @@ struct ProcessArgs {
     #[arg(long, default_value = "2000")]
     height: u32,
 
-    /// An action to apply, in the given order; one of: table-to-image, download-images
+    /// An action to apply, in the given order; one of: table-to-image, download-images, embed-markdown
     #[arg(long = "action", required = true)]
     actions: Vec<Action>,
 }
@@ -209,6 +209,12 @@ fn process_command(args: ProcessArgs) -> Result<()> {
 
     let markdown = fs::read_to_string(&input)
         .with_context(|| format!("Failed to read input file: {}", input.display()))?;
+    let absolute_input = std::path::absolute(&input)
+        .with_context(|| format!("Failed to resolve input path: {}", input.display()))?;
+    let input_dir = absolute_input
+        .parent()
+        .with_context(|| format!("Input path has no directory: {}", input.display()))?
+        .to_path_buf();
 
     let absolute_output = std::path::absolute(&output)
         .with_context(|| format!("Failed to resolve output path: {}", output.display()))?;
@@ -245,6 +251,7 @@ fn process_command(args: ProcessArgs) -> Result<()> {
     };
     let renderer = ChromeRenderer::new(config).context(INSTALL_HELP)?;
     let ctx = ActionContext {
+        input_dir,
         assets_dir,
         output_dir,
         stem,

@@ -1,8 +1,10 @@
 //! The `process` subcommand: parse a markdown file, apply actions to its tree in order, print the tree.
 
 pub mod download_images;
+pub mod embed_markdown;
 pub mod table_to_image;
 
+use std::path::Component;
 use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -16,6 +18,8 @@ use crate::render::chrome::ChromeRenderer;
 
 /// What an action reads and writes besides the tree.
 pub struct ActionContext {
+    /// The directory of the input file; a path in the markdown resolves against it, also `/x`.
+    pub input_dir: PathBuf,
     /// The directory that receives the files the actions create.
     pub assets_dir: PathBuf,
     /// The directory of the output file; a link in the output is relative to it.
@@ -33,6 +37,8 @@ pub enum Action {
     TableToImage,
     /// Download every `http(s)://` image into the assets dir and link the copy.
     DownloadImages,
+    /// Replace a paragraph that holds only `![](x.md)` with the content of `x.md`.
+    EmbedMarkdown,
 }
 
 impl FromStr for Action {
@@ -42,6 +48,7 @@ impl FromStr for Action {
         match name {
             "table-to-image" => Ok(Self::TableToImage),
             "download-images" => Ok(Self::DownloadImages),
+            "embed-markdown" => Ok(Self::EmbedMarkdown),
             _ => Err(format!("unknown action: {name}")),
         }
     }
@@ -58,6 +65,7 @@ impl Action {
         match self {
             Self::TableToImage => table_to_image::apply(arena, root, ctx),
             Self::DownloadImages => download_images::apply(root, ctx),
+            Self::EmbedMarkdown => embed_markdown::apply(arena, root, ctx),
         }
     }
 }
@@ -97,10 +105,8 @@ pub fn process_markdown(
 
 /// The path of `target` relative to the directory `base`, with `/` between the parts, for a link in a file under `base`.
 pub fn relative_url(base: &Path, target: &Path) -> anyhow::Result<String> {
-    let base = std::path::absolute(base)
-        .with_context(|| format!("Failed to resolve path: {}", base.display()))?;
-    let target = std::path::absolute(target)
-        .with_context(|| format!("Failed to resolve path: {}", target.display()))?;
+    let base = absolute_normalized(base)?;
+    let target = absolute_normalized(target)?;
 
     let mut base_parts = base.components().peekable();
     let mut target_parts = target.components().peekable();
@@ -121,6 +127,24 @@ pub fn relative_url(base: &Path, target: &Path) -> anyhow::Result<String> {
         parts.push(part);
     }
     Ok(parts.join("/"))
+}
+
+/// `path` made absolute, with every `.` dropped and every `..` folded into the part before it.
+fn absolute_normalized(path: &Path) -> anyhow::Result<PathBuf> {
+    let absolute = std::path::absolute(path)
+        .with_context(|| format!("Failed to resolve path: {}", path.display()))?;
+
+    let mut normalized = PathBuf::new();
+    for part in absolute.components() {
+        match part {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            _ => normalized.push(part),
+        }
+    }
+    Ok(normalized)
 }
 
 #[cfg(test)]
@@ -146,6 +170,9 @@ mod tests {
 
         let sibling = relative_url(Path::new("/a/b/c"), Path::new("/a/img/x.png"))?;
         assert_eq!(sibling, "../../img/x.png");
+
+        let folded = relative_url(Path::new("/a/b"), Path::new("/a/b/sub/.././x.png"))?;
+        assert_eq!(folded, "x.png");
         Ok(())
     }
 }
