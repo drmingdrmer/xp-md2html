@@ -1,4 +1,7 @@
 use std::fs;
+use std::io;
+use std::io::Read;
+use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -11,6 +14,9 @@ use xp_md2html::process::Action;
 use xp_md2html::process::ActionContext;
 use xp_md2html::render::chrome::ChromeRenderer;
 use xp_md2html::render::chrome::RenderConfig;
+use xp_md2html::render::code::code_to_html;
+use xp_md2html::render::code::load_theme;
+use xp_md2html::render::code::CodeStyle;
 
 #[derive(Parser)]
 #[command(name = "xpmd")]
@@ -27,6 +33,8 @@ enum Commands {
     RenderMarkup(RenderArgs),
     /// Apply actions to a markdown file in order and write the result
     Process(ProcessArgs),
+    /// Render a code snippet to an HTML page with syntax colors
+    RenderCode(RenderCodeArgs),
 }
 
 /// The options of the `render-markup` subcommand.
@@ -89,6 +97,30 @@ struct ProcessArgs {
     actions: Vec<Action>,
 }
 
+/// The options of the `render-code` subcommand.
+#[derive(Args)]
+struct RenderCodeArgs {
+    /// Input file with the code [default: stdin]
+    #[arg(short, long)]
+    input: Option<PathBuf>,
+
+    /// Output HTML file [default: stdout]
+    #[arg(short, long)]
+    output: Option<PathBuf>,
+
+    /// Language of the code as a fenced block names it: rust, rs, py, go [default: the extension of --input, else plain text]
+    #[arg(short, long)]
+    lang: Option<String>,
+
+    /// Color theme: a built-in syntect theme name, or the path of a .tmTheme file
+    #[arg(long, default_value = "base16-ocean.dark")]
+    theme: String,
+
+    /// Width in pixels at which a line wraps
+    #[arg(short, long, default_value = "1000")]
+    width: u32,
+}
+
 /// The context of the error when Chrome or ImageMagick is missing.
 const INSTALL_HELP: &str = "Failed to render content. Make sure Chrome/Chromium and ImageMagick are installed and accessible.\n\
     Chrome: On macOS: Install from https://www.google.com/chrome/\n\
@@ -107,6 +139,9 @@ fn main() -> Result<()> {
         }
         Commands::Process(args) => {
             process_command(args)?;
+        }
+        Commands::RenderCode(args) => {
+            render_code_command(args)?;
         }
     }
 
@@ -194,6 +229,48 @@ fn render_command(args: RenderArgs) -> Result<()> {
     println!("✅ Successfully rendered to: {}", output.display());
     println!("📊 Output size: {} bytes", image_data.len());
 
+    Ok(())
+}
+
+fn render_code_command(args: RenderCodeArgs) -> Result<()> {
+    let RenderCodeArgs {
+        input,
+        output,
+        lang,
+        theme,
+        width,
+    } = args;
+
+    let code = match &input {
+        Some(path) => fs::read_to_string(path)
+            .with_context(|| format!("Failed to read input file: {}", path.display()))?,
+        None => {
+            let mut code = String::new();
+            io::stdin()
+                .read_to_string(&mut code)
+                .context("Failed to read stdin")?;
+            code
+        }
+    };
+
+    let extension = input
+        .as_deref()
+        .and_then(Path::extension)
+        .and_then(|ext| ext.to_str())
+        .map(str::to_string);
+    let lang = lang.or(extension);
+
+    let theme = load_theme(&theme)?;
+    let style = CodeStyle { theme, width };
+    let html = code_to_html(lang.as_deref(), &code, &style)?;
+
+    match output {
+        Some(path) => fs::write(&path, html)
+            .with_context(|| format!("Failed to write output file: {}", path.display()))?,
+        None => io::stdout()
+            .write_all(html.as_bytes())
+            .context("Failed to write stdout")?,
+    }
     Ok(())
 }
 

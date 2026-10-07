@@ -17,6 +17,7 @@ sha2 = "0.10"
 tempfile = "3.8"
 clap = { version = "4.4", features = ["derive"] }
 ureq = "3.4.2"
+syntect = { version = "5.3.0", default-features = false, features = ["default-fancy"] }
 
 [dev-dependencies]
 image-compare = "0.4"
