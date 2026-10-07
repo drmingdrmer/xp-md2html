@@ -17,12 +17,13 @@ use xp_md2html::render::chrome::RenderConfig;
 use xp_md2html::render::code::code_to_html;
 use xp_md2html::render::code::load_theme;
 use xp_md2html::render::code::CodeStyle;
-use xp_md2html::render::graphviz;
 use xp_md2html::render::graphviz::graphviz_to_svg;
-use xp_md2html::render::graphviz::svg_page;
-use xp_md2html::render::graphviz::svg_size;
 use xp_md2html::render::math::math_page;
 use xp_md2html::render::math::math_to_svg;
+use xp_md2html::render::mermaid::mermaid_to_svg;
+use xp_md2html::render::page;
+use xp_md2html::render::page::svg_page;
+use xp_md2html::render::page::svg_size;
 
 #[derive(Parser)]
 #[command(name = "xpmd")]
@@ -44,7 +45,9 @@ enum Commands {
     /// Render LaTeX math to SVG or an image with MathJax
     RenderMath(RenderMathArgs),
     /// Render a DOT graph to SVG or an image with Graphviz
-    RenderGraphviz(RenderGraphvizArgs),
+    RenderGraphviz(DiagramArgs),
+    /// Render a mermaid diagram to SVG or an image
+    RenderMermaid(DiagramArgs),
 }
 
 /// The options of the `render-markup` subcommand.
@@ -163,10 +166,10 @@ struct RenderMathArgs {
     scale: u32,
 }
 
-/// The options of the `render-graphviz` subcommand.
+/// The options of the `render-graphviz` and `render-mermaid` subcommands.
 #[derive(Args)]
-struct RenderGraphvizArgs {
-    /// Input file with the DOT source [default: stdin]
+struct DiagramArgs {
+    /// Input file with the diagram source [default: stdin]
     #[arg(short, long)]
     input: Option<PathBuf>,
 
@@ -213,7 +216,10 @@ fn main() -> Result<()> {
             render_math_command(args)?;
         }
         Commands::RenderGraphviz(args) => {
-            render_graphviz_command(args)?;
+            render_diagram_command(args, graphviz_to_svg)?;
+        }
+        Commands::RenderMermaid(args) => {
+            render_diagram_command(args, mermaid_to_svg)?;
         }
     }
 
@@ -348,8 +354,12 @@ fn render_math_command(args: RenderMathArgs) -> Result<()> {
     write_output(output.as_deref(), &data)
 }
 
-fn render_graphviz_command(args: RenderGraphvizArgs) -> Result<()> {
-    let RenderGraphvizArgs {
+/// Run `render-graphviz` or `render-mermaid`: `to_svg` draws the source that `args` names.
+fn render_diagram_command(
+    args: DiagramArgs,
+    to_svg: fn(&ChromeRenderer, &str) -> Result<String>,
+) -> Result<()> {
+    let DiagramArgs {
         input,
         output,
         format,
@@ -373,18 +383,15 @@ fn render_graphviz_command(args: RenderGraphvizArgs) -> Result<()> {
 
     // The DOM dump that makes the SVG does not depend on the window.
     let renderer = renderer_for(MATH_WINDOW_WIDTH, MATH_WINDOW_HEIGHT)?;
-    let mut svg = graphviz_to_svg(&renderer, &source)?;
+    let mut svg = to_svg(&renderer, &source)?;
     if format == "svg" {
         svg.push('\n');
         return write_output(output.as_deref(), svg.as_bytes());
     }
 
-    // The image window fits the graph; a fixed window would cut a wide graph off.
+    // The image window fits the diagram; a fixed window would cut a wide diagram off.
     let (width, height) = svg_size(&svg)?;
-    let renderer = renderer_for(
-        width + 2 * graphviz::PADDING,
-        height + 2 * graphviz::PADDING,
-    )?;
+    let renderer = renderer_for(width + 2 * page::PADDING, height + 2 * page::PADDING)?;
     let image = renderer.render_markup(&svg_page(&svg))?;
     write_output(output.as_deref(), &image)
 }
