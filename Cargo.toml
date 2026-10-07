@@ -16,6 +16,7 @@ markdown = "1.0.0-alpha.16"
 sha2 = "0.10"
 tempfile = "3.8"
 clap = { version = "4.4", features = ["derive"] }
+ureq = "3.4.2"
 
 [dev-dependencies]
 image-compare = "0.4"

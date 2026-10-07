@@ -1,5 +1,6 @@
 //! The `process` subcommand: parse a markdown file, apply actions to its tree in order, print the tree.
 
+pub mod download_images;
 pub mod table_to_image;
 
 use std::path::Path;
@@ -30,6 +31,8 @@ pub struct ActionContext {
 pub enum Action {
     /// Replace every table with a PNG of it.
     TableToImage,
+    /// Download every `http(s)://` image into the assets dir and link the copy.
+    DownloadImages,
 }
 
 impl FromStr for Action {
@@ -38,6 +41,7 @@ impl FromStr for Action {
     fn from_str(name: &str) -> Result<Self, String> {
         match name {
             "table-to-image" => Ok(Self::TableToImage),
+            "download-images" => Ok(Self::DownloadImages),
             _ => Err(format!("unknown action: {name}")),
         }
     }
@@ -53,6 +57,7 @@ impl Action {
     ) -> anyhow::Result<()> {
         match self {
             Self::TableToImage => table_to_image::apply(arena, root, ctx),
+            Self::DownloadImages => download_images::apply(root, ctx),
         }
     }
 }

@@ -84,7 +84,7 @@ struct ProcessArgs {
     #[arg(long, default_value = "2000")]
     height: u32,
 
-    /// An action to apply, in the given order; one of: table-to-image
+    /// An action to apply, in the given order; one of: table-to-image, download-images
     #[arg(long = "action", required = true)]
     actions: Vec<Action>,
 }
