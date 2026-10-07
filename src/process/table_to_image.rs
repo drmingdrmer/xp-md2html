@@ -11,6 +11,7 @@ use sha2::Digest;
 use sha2::Sha256;
 
 use super::ActionContext;
+use crate::render::markdown::html_options;
 
 /// How many hex digits of the table's hash the file name keeps.
 const HASH_LEN: usize = 12;
@@ -63,9 +64,7 @@ fn is_table(node: Node<'_>) -> bool {
 
 /// Render `table` to a PNG in `ctx.assets_dir` and return the PNG's URL relative to the output file.
 fn render(table: Node<'_>, ctx: &ActionContext) -> anyhow::Result<String> {
-    let mut options = super::gfm_math_options();
-    // Keep raw HTML in cells, such as `<br>`, as github.com does.
-    options.render.r#unsafe = true;
+    let options = html_options();
 
     let mut markdown = String::new();
     comrak::format_commonmark(table, &options, &mut markdown)?;

@@ -18,6 +18,8 @@ use xp_md2html::render::code::code_to_html;
 use xp_md2html::render::code::load_theme;
 use xp_md2html::render::code::CodeStyle;
 use xp_md2html::render::graphviz::graphviz_to_svg;
+use xp_md2html::render::markdown::markdown_page;
+use xp_md2html::render::markdown::markdown_to_html;
 use xp_md2html::render::math::math_page;
 use xp_md2html::render::math::math_to_svg;
 use xp_md2html::render::mermaid::mermaid_to_svg;
@@ -48,6 +50,8 @@ enum Commands {
     RenderGraphviz(DiagramArgs),
     /// Render a mermaid diagram to SVG or an image
     RenderMermaid(DiagramArgs),
+    /// Render markdown to an HTML page in GitHub's style, or to bare HTML
+    RenderMarkdown(RenderMarkdownArgs),
 }
 
 /// The options of the `render-markup` subcommand.
@@ -186,6 +190,22 @@ struct DiagramArgs {
     scale: u32,
 }
 
+/// The options of the `render-markdown` subcommand.
+#[derive(Args)]
+struct RenderMarkdownArgs {
+    /// Input markdown file [default: stdin]
+    #[arg(short, long)]
+    input: Option<PathBuf>,
+
+    /// Output HTML file [default: stdout]
+    #[arg(short, long)]
+    output: Option<PathBuf>,
+
+    /// Write the bare HTML of the content, without the page and GitHub's style sheet around it
+    #[arg(long)]
+    bare: bool,
+}
+
 /// The window that a formula is rendered in; the trim cuts the image down to the formula.
 const MATH_WINDOW_WIDTH: u32 = 1000;
 const MATH_WINDOW_HEIGHT: u32 = 2000;
@@ -220,6 +240,9 @@ fn main() -> Result<()> {
         }
         Commands::RenderMermaid(args) => {
             render_diagram_command(args, mermaid_to_svg)?;
+        }
+        Commands::RenderMarkdown(args) => {
+            render_markdown_command(args)?;
         }
     }
 
@@ -352,6 +375,20 @@ fn render_math_command(args: RenderMathArgs) -> Result<()> {
     };
 
     write_output(output.as_deref(), &data)
+}
+
+fn render_markdown_command(args: RenderMarkdownArgs) -> Result<()> {
+    let RenderMarkdownArgs {
+        input,
+        output,
+        bare,
+    } = args;
+
+    let markdown = read_input(input.as_deref())?;
+    let html = markdown_to_html(&markdown);
+    let out = if bare { html } else { markdown_page(&html) };
+
+    write_output(output.as_deref(), out.as_bytes())
 }
 
 /// Run `render-graphviz` or `render-mermaid`: `to_svg` draws the source that `args` names.
