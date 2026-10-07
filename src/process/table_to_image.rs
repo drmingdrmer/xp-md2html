@@ -58,7 +58,7 @@ pub fn replace_tables<'a>(
     Ok(())
 }
 
-fn is_table(node: Node<'_>) -> bool {
+pub(super) fn is_table(node: Node<'_>) -> bool {
     matches!(node.data().value, NodeValue::Table(_))
 }
 

@@ -45,6 +45,49 @@ fn test_process_table_to_image() -> Result<()> {
     Ok(())
 }
 
+/// `xpmd process --action table-to-html` writes the table as a bare `<table>` of rows.
+#[test]
+fn test_process_table_to_html() -> Result<()> {
+    let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let input = root_dir.join("tests/fixtures/table.md");
+    let output_dir = tempfile::tempdir()?;
+    let output = output_dir.path().join("post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "table-to-html", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let expected_markdown = "# Tables\n\n\
+        Before the table.\n\n\
+        <table>\n\
+        <tr>\n\
+        <th align=\"left\">name</th>\n\
+        <th align=\"right\">value</th>\n\
+        <th>note</th>\n\
+        </tr>\n\
+        <tr>\n\
+        <td align=\"left\">a</td>\n\
+        <td align=\"right\">1</td>\n\
+        <td><code>code</code> and 中文</td>\n\
+        </tr>\n\
+        <tr>\n\
+        <td align=\"left\">b</td>\n\
+        <td align=\"right\">22</td>\n\
+        <td><strong>bold</strong></td>\n\
+        </tr>\n\
+        </table>\n\n\
+        After the table.\n";
+    assert_eq!(markdown, expected_markdown);
+    Ok(())
+}
+
 /// `xpmd process --action image-to-asset` copies a local image into `--assets` under a name that
 /// hashes its content, and links the copy relative to the output file.
 #[test]
