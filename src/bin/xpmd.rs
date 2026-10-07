@@ -17,6 +17,8 @@ use xp_md2html::render::chrome::RenderConfig;
 use xp_md2html::render::code::code_to_html;
 use xp_md2html::render::code::load_theme;
 use xp_md2html::render::code::CodeStyle;
+use xp_md2html::render::math::math_page;
+use xp_md2html::render::math::math_to_svg;
 
 #[derive(Parser)]
 #[command(name = "xpmd")]
@@ -35,6 +37,8 @@ enum Commands {
     Process(ProcessArgs),
     /// Render a code snippet to an HTML page with syntax colors
     RenderCode(RenderCodeArgs),
+    /// Render LaTeX math to SVG or an image with MathJax
+    RenderMath(RenderMathArgs),
 }
 
 /// The options of the `render-markup` subcommand.
@@ -129,6 +133,34 @@ struct RenderCodeArgs {
     width: u32,
 }
 
+/// The options of the `render-math` subcommand.
+#[derive(Args)]
+struct RenderMathArgs {
+    /// Input file with the TeX source, without the $ delimiters [default: stdin]
+    #[arg(short, long)]
+    input: Option<PathBuf>,
+
+    /// Output file [default: stdout]
+    #[arg(short, long)]
+    output: Option<PathBuf>,
+
+    /// Output format: svg, png, jpg, jpeg [default: the output file's extension, else svg]
+    #[arg(short, long)]
+    format: Option<String>,
+
+    /// Typeset as inline math instead of display math
+    #[arg(long)]
+    inline: bool,
+
+    /// Device scale factor of an image: 2 renders every CSS pixel as 2x2 image pixels, for HiDPI screens
+    #[arg(long, default_value = "2")]
+    scale: u32,
+}
+
+/// The window that a formula is rendered in; the trim cuts the image down to the formula.
+const MATH_WINDOW_WIDTH: u32 = 1000;
+const MATH_WINDOW_HEIGHT: u32 = 2000;
+
 /// The context of the error when Chrome or ImageMagick is missing.
 const INSTALL_HELP: &str = "Failed to render content. Make sure Chrome/Chromium and ImageMagick are installed and accessible.\n\
     Chrome: On macOS: Install from https://www.google.com/chrome/\n\
@@ -150,6 +182,9 @@ fn main() -> Result<()> {
         }
         Commands::RenderCode(args) => {
             render_code_command(args)?;
+        }
+        Commands::RenderMath(args) => {
+            render_math_command(args)?;
         }
     }
 
@@ -251,17 +286,7 @@ fn render_code_command(args: RenderCodeArgs) -> Result<()> {
         width,
     } = args;
 
-    let code = match &input {
-        Some(path) => fs::read_to_string(path)
-            .with_context(|| format!("Failed to read input file: {}", path.display()))?,
-        None => {
-            let mut code = String::new();
-            io::stdin()
-                .read_to_string(&mut code)
-                .context("Failed to read stdin")?;
-            code
-        }
-    };
+    let code = read_input(input.as_deref())?;
 
     let extension = input
         .as_deref()
@@ -274,14 +299,88 @@ fn render_code_command(args: RenderCodeArgs) -> Result<()> {
     let style = CodeStyle { theme, width };
     let html = code_to_html(lang.as_deref(), &code, &style)?;
 
-    match output {
-        Some(path) => fs::write(&path, html)
-            .with_context(|| format!("Failed to write output file: {}", path.display()))?,
-        None => io::stdout()
-            .write_all(html.as_bytes())
-            .context("Failed to write stdout")?,
+    write_output(output.as_deref(), html.as_bytes())
+}
+
+fn render_math_command(args: RenderMathArgs) -> Result<()> {
+    let RenderMathArgs {
+        input,
+        output,
+        format,
+        inline,
+        scale,
+    } = args;
+
+    let tex = read_input(input.as_deref())?;
+    let format = resolve_math_format(format.as_deref(), output.as_deref())?;
+
+    let config = RenderConfig {
+        mime: "text/html".to_string(),
+        output_type: format.to_string(),
+        width: MATH_WINDOW_WIDTH,
+        height: MATH_WINDOW_HEIGHT,
+        scale,
+        asset_base: None,
+    };
+    let renderer = ChromeRenderer::new(config).context(INSTALL_HELP)?;
+
+    let display = !inline;
+    let data = if format == "svg" {
+        let mut svg = math_to_svg(&renderer, &tex, display)?;
+        svg.push('\n');
+        svg.into_bytes()
+    } else {
+        renderer.render_markup(&math_page(&tex, display))?
+    };
+
+    write_output(output.as_deref(), &data)
+}
+
+/// The content of `path`, or of stdin when there is no path.
+fn read_input(path: Option<&Path>) -> Result<String> {
+    let Some(path) = path else {
+        let mut content = String::new();
+        io::stdin()
+            .read_to_string(&mut content)
+            .context("Failed to read stdin")?;
+        return Ok(content);
+    };
+    fs::read_to_string(path)
+        .with_context(|| format!("Failed to read input file: {}", path.display()))
+}
+
+/// Write `data` to `path`, or to stdout when there is no path.
+fn write_output(path: Option<&Path>, data: &[u8]) -> Result<()> {
+    let Some(path) = path else {
+        return io::stdout()
+            .write_all(data)
+            .context("Failed to write stdout");
+    };
+    fs::write(path, data)
+        .with_context(|| format!("Failed to write output file: {}", path.display()))
+}
+
+/// The output formats of `render-math`, as error messages list them.
+const SUPPORTED_MATH_FORMATS: &str = "svg, png, jpg, jpeg";
+
+/// Return the output format of `render-math`: `-f`, else the extension of `-o`, else svg.
+fn resolve_math_format(format: Option<&str>, output: Option<&Path>) -> Result<&'static str> {
+    let extension = output
+        .and_then(Path::extension)
+        .and_then(|ext| ext.to_str());
+    let Some(name) = format.or(extension) else {
+        return Ok("svg");
+    };
+    match name.to_lowercase().as_str() {
+        "svg" => Ok("svg"),
+        "png" => Ok("png"),
+        "jpg" | "jpeg" => Ok("jpg"),
+        _ => anyhow::bail!(
+            "Unsupported math output format: {}. Supported: {}",
+            name,
+            SUPPORTED_MATH_FORMATS
+        ),
     }
-    Ok(())
 }
 
 fn process_command(args: ProcessArgs) -> Result<()> {
@@ -432,6 +531,28 @@ mod tests {
 
         let format = resolve_format(Some("jpeg"), Path::new("out.jpg"))?;
         assert_eq!(format, "jpg");
+        Ok(())
+    }
+
+    #[test]
+    fn test_resolve_math_format() -> Result<()> {
+        let default = resolve_math_format(None, None)?;
+        assert_eq!(default, "svg");
+
+        let from_extension = resolve_math_format(None, Some(Path::new("x.PNG")))?;
+        assert_eq!(from_extension, "png");
+
+        let flag_wins = resolve_math_format(Some("jpeg"), Some(Path::new("x.svg")))?;
+        assert_eq!(flag_wins, "jpg");
+
+        let no_extension = resolve_math_format(None, Some(Path::new("x")))?;
+        assert_eq!(no_extension, "svg");
+
+        let error = resolve_math_format(None, Some(Path::new("x.pdf"))).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Unsupported math output format: pdf. Supported: svg, png, jpg, jpeg"
+        );
         Ok(())
     }
 

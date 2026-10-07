@@ -2,6 +2,7 @@ use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
+use std::process::Output;
 
 use anyhow::Context;
 use tempfile::TempDir;
@@ -68,38 +69,19 @@ impl ChromeRenderer {
         let temp_dir = TempDir::new()?;
         let cwd = temp_dir.path();
 
-        let mime = &self.config.mime;
-        let asset_base = self.config.asset_base.as_deref();
-        let input_file_path = Self::create_markup_file(cwd, input, mime, asset_base)?;
-
-        let mut cmd = self.build_chrome_snapshot_cmd(&input_file_path, cwd);
-
-        let mes = format!(
-            "Failed take snapshot with chrome: {:?}; cwd: {}",
-            cmd,
-            cwd.display()
-        );
-
-        // Set working directory for the command
-        cmd.current_dir(cwd);
-
-        // Chrome's output is noise, unless Chrome fails.
-        let chrome_output = cmd.output().context(mes.clone())?;
-
-        if !chrome_output.status.success() {
-            let stderr = String::from_utf8_lossy(&chrome_output.stderr);
-            anyhow::bail!(
-                "{}: exit code: {:?}; stderr: {}",
-                mes,
-                chrome_output.status.code(),
-                stderr
-            );
-        }
+        // A PDF is printed so that its text stays text; a screenshot would make it an image.
+        let is_pdf = self.config.output_type == "pdf";
+        let capture: &[&str] = if is_pdf {
+            // Without `--no-pdf-header-footer`, Chrome adds the date, the file URL and page numbers.
+            &["--print-to-pdf", "--no-pdf-header-footer"]
+        } else {
+            &["--screenshot"]
+        };
+        self.run_chrome(cwd, input, capture)?;
 
         // The default screenshot path.
         let screenshot_path = cwd.join("screenshot.png");
 
-        let is_pdf = self.config.output_type == "pdf";
         if is_pdf {
             // The default `--print-to-pdf` path.
             let pdf_path = cwd.join("output.pdf");
@@ -112,6 +94,48 @@ impl ChromeRenderer {
         let final_image_data = self.trim_image(&screenshot_path)?;
 
         Ok(final_image_data)
+    }
+
+    /// Return the DOM of `input` as Chrome serializes it once the page has loaded and its scripts have run.
+    pub fn dump_dom(&self, input: &str) -> anyhow::Result<String> {
+        let temp_dir = TempDir::new()?;
+        let output = self.run_chrome(temp_dir.path(), input, &["--dump-dom"])?;
+        let dom =
+            String::from_utf8(output.stdout).context("Chrome printed a DOM that is not UTF-8")?;
+        Ok(dom)
+    }
+
+    /// Write `input` into `cwd`, run Chrome on it with the `capture` flags, and return Chrome's output once it exits.
+    fn run_chrome(&self, cwd: &Path, input: &str, capture: &[&str]) -> anyhow::Result<Output> {
+        let mime = &self.config.mime;
+        let asset_base = self.config.asset_base.as_deref();
+        let input_file_path = Self::create_markup_file(cwd, input, mime, asset_base)?;
+
+        let mut cmd = self.build_chrome_cmd(&input_file_path, cwd, capture);
+
+        let mes = format!(
+            "Failed take snapshot with chrome: {:?}; cwd: {}",
+            cmd,
+            cwd.display()
+        );
+
+        // Set working directory for the command
+        cmd.current_dir(cwd);
+
+        // Chrome's stderr is noise, unless Chrome fails.
+        let chrome_output = cmd.output().context(mes.clone())?;
+
+        if !chrome_output.status.success() {
+            let stderr = String::from_utf8_lossy(&chrome_output.stderr);
+            anyhow::bail!(
+                "{}: exit code: {:?}; stderr: {}",
+                mes,
+                chrome_output.status.code(),
+                stderr
+            );
+        }
+
+        Ok(chrome_output)
     }
 
     /// Setup html context, such as encoding and url base
@@ -262,21 +286,12 @@ impl ChromeRenderer {
         Ok(markup_file_path)
     }
 
-    /// Build a chrome command to take screenshot, the output is a png file "screenshot.png" in the current directory,
-    /// or "output.pdf" for a PDF
-    fn build_chrome_snapshot_cmd(&self, markup_file_path: &Path, cwd: &Path) -> Command {
+    /// Build a chrome command that loads `markup_file_path` and captures it as `capture` says: `--screenshot`
+    /// writes "screenshot.png" in `cwd`, `--print-to-pdf` writes "output.pdf", `--dump-dom` prints the DOM to stdout
+    fn build_chrome_cmd(&self, markup_file_path: &Path, cwd: &Path, capture: &[&str]) -> Command {
         let width = self.config.width;
         let height = self.config.height;
         let scale = self.config.scale;
-
-        // A PDF is printed so that its text stays text; a screenshot would make it an image.
-        let is_pdf = self.config.output_type == "pdf";
-        let capture: &[&str] = if is_pdf {
-            // Without `--no-pdf-header-footer`, Chrome adds the date, the file URL and page numbers.
-            &["--print-to-pdf", "--no-pdf-header-footer"]
-        } else {
-            &["--screenshot"]
-        };
 
         let mut cmd = Command::new(&self.chrome);
 

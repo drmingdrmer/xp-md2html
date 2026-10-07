@@ -6,5 +6,6 @@ mod integration {
     pub mod pdf_tests;
     pub mod process_tests;
     pub mod render_code_tests;
+    pub mod render_math_tests;
     pub mod xpmd_tests;
 }
