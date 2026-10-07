@@ -17,6 +17,10 @@ const PIXELS_PER_POINT: f64 = 96.0 / 72.0;
 /// Graphviz's error message into `#err`.
 ///
 /// The source sits in a hidden element that the script reads as text, so it needs only HTML escaping.
+///
+/// viz.js compiles its WebAssembly in the background, and Chrome dumps the DOM once the page has
+/// loaded, so on a slow machine the dump came before the SVG. The page makes the compile
+/// synchronous, which keeps the whole run inside its scripts, before the load event.
 pub fn graphviz_page(source: &str) -> String {
     let escaped = escape_text(source);
     format!(
@@ -25,6 +29,13 @@ pub fn graphviz_page(source: &str) -> String {
          <div id=\"dot\" hidden>{escaped}</div>\n\
          <div id=\"out\"></div>\n\
          <div id=\"err\"></div>\n\
+         <script>\n\
+         WebAssembly.instantiate = (bytes, imports) => {{\n\
+           const module = new WebAssembly.Module(bytes);\n\
+           const instance = new WebAssembly.Instance(module, imports);\n\
+           return Promise.resolve({{ module, instance }});\n\
+         }};\n\
+         </script>\n\
          <script>{VIZ}</script>\n\
          <script>\n\
          Viz.instance().then(viz => {{\n\

@@ -9,6 +9,10 @@ use tempfile::TempDir;
 
 use crate::mime::Mime;
 
+/// The page time, in milliseconds, that a DOM dump gives the page's timers at most; the waits
+/// between the timers are skipped, so the budget costs no real time.
+const VIRTUAL_TIME_BUDGET: &str = "--virtual-time-budget=5000";
+
 /// Settings that every render of one [`ChromeRenderer`] uses.
 pub struct RenderConfig {
     /// A full mime type such as "image/jpeg" or a shortcut "jpg"
@@ -97,9 +101,14 @@ impl ChromeRenderer {
     }
 
     /// Return the DOM of `input` as Chrome serializes it once the page has loaded and its scripts have run.
+    ///
+    /// A script that finishes its work in a timer callback, as mermaid does in `setTimeout(..., 0)`,
+    /// runs it after the load event. With a virtual time budget Chrome first runs the timers,
+    /// skipping the waits between them, and dumps the DOM when none is left or the budget is spent.
     pub fn dump_dom(&self, input: &str) -> anyhow::Result<String> {
         let temp_dir = TempDir::new()?;
-        let output = self.run_chrome(temp_dir.path(), input, &["--dump-dom"])?;
+        let capture = ["--dump-dom", VIRTUAL_TIME_BUDGET];
+        let output = self.run_chrome(temp_dir.path(), input, &capture)?;
         let dom =
             String::from_utf8(output.stdout).context("Chrome printed a DOM that is not UTF-8")?;
         Ok(dom)
