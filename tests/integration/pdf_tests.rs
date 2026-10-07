@@ -18,6 +18,7 @@ fn test_pdf_keeps_text() -> Result<()> {
         output_type: "pdf".to_string(),
         width: 800,
         height: 600,
+        scale: 1,
         asset_base: None,
     };
     let renderer = ChromeRenderer::new(config)?;

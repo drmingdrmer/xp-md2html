@@ -129,6 +129,7 @@ fn do_run_golden_test(test: &GoldenTest) -> Result<()> {
         output_type: "png".to_string(),
         width: test.width,
         height: test.height,
+        scale: 1,
         asset_base: None,
     };
     let renderer = ChromeRenderer::new(config)?;
@@ -231,6 +232,7 @@ fn test_failure_demo() {
         output_type: "png".to_string(),
         width: test.width,
         height: test.height,
+        scale: 1,
         asset_base: None,
     };
     let renderer = ChromeRenderer::new(config).unwrap();

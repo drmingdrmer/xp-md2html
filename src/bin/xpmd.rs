@@ -60,6 +60,10 @@ struct RenderArgs {
     #[arg(long, default_value = "2000")]
     height: u32,
 
+    /// Device scale factor: 2 renders every CSS pixel as 2x2 image pixels, for HiDPI screens
+    #[arg(long, default_value = "2")]
+    scale: u32,
+
     /// MIME type of input content (auto-detected if not specified)
     #[arg(short, long)]
     mime: Option<String>,
@@ -91,6 +95,10 @@ struct ProcessArgs {
     /// Window height for rendering images
     #[arg(long, default_value = "2000")]
     height: u32,
+
+    /// Device scale factor: 2 renders every CSS pixel as 2x2 image pixels, for HiDPI screens
+    #[arg(long, default_value = "2")]
+    scale: u32,
 
     /// An action to apply, in the given order; one of: table-to-image, download-images, embed-markdown
     #[arg(long = "action", required = true)]
@@ -155,6 +163,7 @@ fn render_command(args: RenderArgs) -> Result<()> {
         format,
         width,
         height,
+        scale,
         mime,
         base,
     } = args;
@@ -217,6 +226,7 @@ fn render_command(args: RenderArgs) -> Result<()> {
         output_type: format.to_string(),
         width,
         height,
+        scale,
         asset_base: base,
     };
     let renderer = ChromeRenderer::new(config).context(INSTALL_HELP)?;
@@ -281,6 +291,7 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         assets,
         width,
         height,
+        scale,
         actions,
     } = args;
 
@@ -324,6 +335,7 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         output_type: "png".to_string(),
         width,
         height,
+        scale,
         asset_base: None,
     };
     let renderer = ChromeRenderer::new(config).context(INSTALL_HELP)?;

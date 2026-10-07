@@ -18,6 +18,8 @@ pub struct RenderConfig {
     pub width: u32,
     /// The window height to render a page
     pub height: u32,
+    /// The device scale factor: 2 renders every CSS pixel as 2x2 image pixels, for HiDPI screens
+    pub scale: u32,
     /// The path to assets dir. E.g. the image base path in a html page
     pub asset_base: Option<PathBuf>,
 }
@@ -265,6 +267,7 @@ impl ChromeRenderer {
     fn build_chrome_snapshot_cmd(&self, markup_file_path: &Path, cwd: &Path) -> Command {
         let width = self.config.width;
         let height = self.config.height;
+        let scale = self.config.scale;
 
         // A PDF is printed so that its text stays text; a screenshot would make it an image.
         let is_pdf = self.config.output_type == "pdf";
@@ -293,7 +296,7 @@ impl ChromeRenderer {
             "--disable-web-security",
             "--disable-features=VizDisplayCompositor",
             // Without it, the scale, and so the image size, follows the machine's display.
-            "--force-device-scale-factor=1",
+            &format!("--force-device-scale-factor={}", scale),
             &format!("--window-size={},{}", width, height),
             "--default-background-color=00000000",
             markup_file_path.to_str().unwrap(),
