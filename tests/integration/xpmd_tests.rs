@@ -1,6 +1,8 @@
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 use std::process::Command;
+use std::process::Stdio;
 
 use anyhow::Result;
 
@@ -57,6 +59,41 @@ fn test_render_takes_format_from_output_extension() -> Result<()> {
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
+
+    let data = fs::read(&output)?;
+    let magic = data.get(..JPEG_MAGIC.len());
+    assert_eq!(magic, Some(JPEG_MAGIC.as_slice()));
+    Ok(())
+}
+
+/// Without `-i`, `render-markup` reads the markup from stdin and treats it as HTML.
+#[test]
+fn test_render_reads_stdin() -> Result<()> {
+    let output_dir = tempfile::tempdir()?;
+    let output = output_dir.path().join("stdin.jpg");
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["render-markup", "-o"])
+        .arg(&output)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let mut stdin = child.stdin.take().unwrap();
+    stdin.write_all(b"<html><body><h1>From stdin</h1></body></html>")?;
+    drop(stdin);
+    let result = child.wait_with_output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let stdout = String::from_utf8(result.stdout)?;
+    let first_line = stdout.lines().next().unwrap_or("");
+    let expected_first_line = format!(
+        "Rendering stdin to {} (1000x2000, format: jpg)",
+        output.display()
+    );
+    assert_eq!(first_line, expected_first_line);
 
     let data = fs::read(&output)?;
     let magic = data.get(..JPEG_MAGIC.len());

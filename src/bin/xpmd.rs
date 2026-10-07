@@ -44,9 +44,9 @@ enum Commands {
 /// The options of the `render-markup` subcommand.
 #[derive(Args)]
 struct RenderArgs {
-    /// Input file path (HTML content)
+    /// Input file path (HTML content) [default: stdin]
     #[arg(short, long)]
-    input: PathBuf,
+    input: Option<PathBuf>,
 
     /// Output file path
     #[arg(short, long)]
@@ -203,20 +203,14 @@ fn render_command(args: RenderArgs) -> Result<()> {
         base,
     } = args;
 
-    // Validate input file exists
-    if !input.exists() {
-        anyhow::bail!("Input file does not exist: {}", input.display());
-    }
-
-    // Read input content as string
-    let content = fs::read_to_string(&input)
-        .with_context(|| format!("Failed to read input file: {}", input.display()))?;
+    let content = read_input(input.as_deref())?;
 
     // Determine MIME type
     let mime_type = mime.unwrap_or_else(|| {
         // Try to determine from file extension
         input
-            .extension()
+            .as_deref()
+            .and_then(Path::extension)
             .and_then(|ext| ext.to_str())
             .map(|ext| match ext.to_lowercase().as_str() {
                 "html" | "htm" => "text/html",
@@ -233,16 +227,25 @@ fn render_command(args: RenderArgs) -> Result<()> {
     if base.is_some() && !is_html {
         anyhow::bail!("--base only works with HTML input, not {}", mime_type);
     }
-    let absolute_input = std::path::absolute(&input)
-        .with_context(|| format!("Failed to resolve input path: {}", input.display()))?;
-    let input_dir = absolute_input.parent().map(Path::to_path_buf);
+    let input_dir = match &input {
+        Some(path) => {
+            let absolute = std::path::absolute(path)
+                .with_context(|| format!("Failed to resolve input path: {}", path.display()))?;
+            absolute.parent().map(Path::to_path_buf)
+        }
+        None => None,
+    };
     let base = if is_html { base.or(input_dir) } else { None };
 
     let format = resolve_format(format.as_deref(), &output)?;
 
+    let input_name = match &input {
+        Some(path) => path.display().to_string(),
+        None => "stdin".to_string(),
+    };
     println!(
         "Rendering {} to {} ({}x{}, format: {})",
-        input.display(),
+        input_name,
         output.display(),
         width,
         height,
