@@ -1,0 +1,5 @@
+digraph {
+    rankdir = LR;
+    a -> b;
+    b -> c [label = "边 edge"];
+}

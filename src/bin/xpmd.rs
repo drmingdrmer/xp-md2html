@@ -17,6 +17,10 @@ use xp_md2html::render::chrome::RenderConfig;
 use xp_md2html::render::code::code_to_html;
 use xp_md2html::render::code::load_theme;
 use xp_md2html::render::code::CodeStyle;
+use xp_md2html::render::graphviz;
+use xp_md2html::render::graphviz::graphviz_to_svg;
+use xp_md2html::render::graphviz::svg_page;
+use xp_md2html::render::graphviz::svg_size;
 use xp_md2html::render::math::math_page;
 use xp_md2html::render::math::math_to_svg;
 
@@ -39,6 +43,8 @@ enum Commands {
     RenderCode(RenderCodeArgs),
     /// Render LaTeX math to SVG or an image with MathJax
     RenderMath(RenderMathArgs),
+    /// Render a DOT graph to SVG or an image with Graphviz
+    RenderGraphviz(RenderGraphvizArgs),
 }
 
 /// The options of the `render-markup` subcommand.
@@ -157,6 +163,26 @@ struct RenderMathArgs {
     scale: u32,
 }
 
+/// The options of the `render-graphviz` subcommand.
+#[derive(Args)]
+struct RenderGraphvizArgs {
+    /// Input file with the DOT source [default: stdin]
+    #[arg(short, long)]
+    input: Option<PathBuf>,
+
+    /// Output file [default: stdout]
+    #[arg(short, long)]
+    output: Option<PathBuf>,
+
+    /// Output format: svg, png, jpg, jpeg [default: the output file's extension, else svg]
+    #[arg(short, long)]
+    format: Option<String>,
+
+    /// Device scale factor of an image: 2 renders every CSS pixel as 2x2 image pixels, for HiDPI screens
+    #[arg(long, default_value = "2")]
+    scale: u32,
+}
+
 /// The window that a formula is rendered in; the trim cuts the image down to the formula.
 const MATH_WINDOW_WIDTH: u32 = 1000;
 const MATH_WINDOW_HEIGHT: u32 = 2000;
@@ -185,6 +211,9 @@ fn main() -> Result<()> {
         }
         Commands::RenderMath(args) => {
             render_math_command(args)?;
+        }
+        Commands::RenderGraphviz(args) => {
+            render_graphviz_command(args)?;
         }
     }
 
@@ -315,7 +344,7 @@ fn render_math_command(args: RenderMathArgs) -> Result<()> {
     } = args;
 
     let tex = read_input(input.as_deref())?;
-    let format = resolve_math_format(format.as_deref(), output.as_deref())?;
+    let format = resolve_svg_format(format.as_deref(), output.as_deref())?;
 
     let config = RenderConfig {
         mime: "text/html".to_string(),
@@ -337,6 +366,47 @@ fn render_math_command(args: RenderMathArgs) -> Result<()> {
     };
 
     write_output(output.as_deref(), &data)
+}
+
+fn render_graphviz_command(args: RenderGraphvizArgs) -> Result<()> {
+    let RenderGraphvizArgs {
+        input,
+        output,
+        format,
+        scale,
+    } = args;
+
+    let source = read_input(input.as_deref())?;
+    let format = resolve_svg_format(format.as_deref(), output.as_deref())?;
+
+    let renderer_for = |width: u32, height: u32| -> Result<ChromeRenderer> {
+        let config = RenderConfig {
+            mime: "text/html".to_string(),
+            output_type: format.to_string(),
+            width,
+            height,
+            scale,
+            asset_base: None,
+        };
+        ChromeRenderer::new(config).context(INSTALL_HELP)
+    };
+
+    // The DOM dump that makes the SVG does not depend on the window.
+    let renderer = renderer_for(MATH_WINDOW_WIDTH, MATH_WINDOW_HEIGHT)?;
+    let mut svg = graphviz_to_svg(&renderer, &source)?;
+    if format == "svg" {
+        svg.push('\n');
+        return write_output(output.as_deref(), svg.as_bytes());
+    }
+
+    // The image window fits the graph; a fixed window would cut a wide graph off.
+    let (width, height) = svg_size(&svg)?;
+    let renderer = renderer_for(
+        width + 2 * graphviz::PADDING,
+        height + 2 * graphviz::PADDING,
+    )?;
+    let image = renderer.render_markup(&svg_page(&svg))?;
+    write_output(output.as_deref(), &image)
 }
 
 /// The content of `path`, or of stdin when there is no path.
@@ -363,11 +433,12 @@ fn write_output(path: Option<&Path>, data: &[u8]) -> Result<()> {
         .with_context(|| format!("Failed to write output file: {}", path.display()))
 }
 
-/// The output formats of `render-math`, as error messages list them.
-const SUPPORTED_MATH_FORMATS: &str = "svg, png, jpg, jpeg";
+/// The output formats of `render-math` and `render-graphviz`, as error messages list them.
+const SUPPORTED_SVG_FORMATS: &str = "svg, png, jpg, jpeg";
 
-/// Return the output format of `render-math`: `-f`, else the extension of `-o`, else svg.
-fn resolve_math_format(format: Option<&str>, output: Option<&Path>) -> Result<&'static str> {
+/// Return the output format of `render-math` and `render-graphviz`: `-f`, else the extension of
+/// `-o`, else svg.
+fn resolve_svg_format(format: Option<&str>, output: Option<&Path>) -> Result<&'static str> {
     let extension = output
         .and_then(Path::extension)
         .and_then(|ext| ext.to_str());
@@ -379,9 +450,9 @@ fn resolve_math_format(format: Option<&str>, output: Option<&Path>) -> Result<&'
         "png" => Ok("png"),
         "jpg" | "jpeg" => Ok("jpg"),
         _ => anyhow::bail!(
-            "Unsupported math output format: {}. Supported: {}",
+            "Unsupported output format: {}. Supported: {}",
             name,
-            SUPPORTED_MATH_FORMATS
+            SUPPORTED_SVG_FORMATS
         ),
     }
 }
@@ -538,23 +609,23 @@ mod tests {
     }
 
     #[test]
-    fn test_resolve_math_format() -> Result<()> {
-        let default = resolve_math_format(None, None)?;
+    fn test_resolve_svg_format() -> Result<()> {
+        let default = resolve_svg_format(None, None)?;
         assert_eq!(default, "svg");
 
-        let from_extension = resolve_math_format(None, Some(Path::new("x.PNG")))?;
+        let from_extension = resolve_svg_format(None, Some(Path::new("x.PNG")))?;
         assert_eq!(from_extension, "png");
 
-        let flag_wins = resolve_math_format(Some("jpeg"), Some(Path::new("x.svg")))?;
+        let flag_wins = resolve_svg_format(Some("jpeg"), Some(Path::new("x.svg")))?;
         assert_eq!(flag_wins, "jpg");
 
-        let no_extension = resolve_math_format(None, Some(Path::new("x")))?;
+        let no_extension = resolve_svg_format(None, Some(Path::new("x")))?;
         assert_eq!(no_extension, "svg");
 
-        let error = resolve_math_format(None, Some(Path::new("x.pdf"))).unwrap_err();
+        let error = resolve_svg_format(None, Some(Path::new("x.pdf"))).unwrap_err();
         assert_eq!(
             error.to_string(),
-            "Unsupported math output format: pdf. Supported: svg, png, jpg, jpeg"
+            "Unsupported output format: pdf. Supported: svg, png, jpg, jpeg"
         );
         Ok(())
     }
