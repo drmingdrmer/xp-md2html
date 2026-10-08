@@ -2,6 +2,7 @@
 
 pub mod code_to_image;
 pub mod download_images;
+pub mod drop_front_matter;
 pub mod embed_markdown;
 pub mod graphviz_to_image;
 pub mod image_to_asset;
@@ -77,6 +78,8 @@ pub enum Action {
         /// The service that draws the formulas.
         service: MathService,
     },
+    /// Remove the `---` front matter block at the top of the file.
+    DropFrontMatter,
 }
 
 impl FromStr for Action {
@@ -124,6 +127,7 @@ impl FromStr for Action {
             ("math-to-img-tag", None) => Err(format!(
                 "invalid action: {name}; math-to-img-tag=SERVICE takes one of: {SERVICE_NAMES}"
             )),
+            ("drop-front-matter", None) => Ok(Self::DropFrontMatter),
             _ => Err(format!("unknown action: {name}")),
         }
     }
@@ -149,6 +153,10 @@ impl Action {
             Self::MathToImage { service } => math_to_image::apply(arena, root, *service, ctx),
             Self::MathToImgTag { service } => {
                 math_to_img_tag::apply(root, *service);
+                Ok(())
+            }
+            Self::DropFrontMatter => {
+                drop_front_matter::apply(root);
                 Ok(())
             }
         }
