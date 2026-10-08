@@ -2,6 +2,7 @@
 
 pub mod download_images;
 pub mod embed_markdown;
+pub mod graphviz_to_image;
 pub mod image_to_asset;
 pub mod mermaid_to_image;
 pub mod table_to_html;
@@ -50,6 +51,8 @@ pub enum Action {
     TableToHtml,
     /// Replace every ```` ```mermaid ```` block with a PNG of the diagram.
     MermaidToImage,
+    /// Replace every ```` ```graphviz ```` block with a PNG of the graph.
+    GraphvizToImage,
 }
 
 impl FromStr for Action {
@@ -63,6 +66,7 @@ impl FromStr for Action {
             "image-to-asset" => Ok(Self::ImageToAsset),
             "table-to-html" => Ok(Self::TableToHtml),
             "mermaid-to-image" => Ok(Self::MermaidToImage),
+            "graphviz-to-image" => Ok(Self::GraphvizToImage),
             _ => Err(format!("unknown action: {name}")),
         }
     }
@@ -83,6 +87,7 @@ impl Action {
             Self::ImageToAsset => image_to_asset::apply(root, ctx),
             Self::TableToHtml => table_to_html::apply(arena, root),
             Self::MermaidToImage => mermaid_to_image::apply(arena, root, ctx),
+            Self::GraphvizToImage => graphviz_to_image::apply(arena, root, ctx),
         }
     }
 }

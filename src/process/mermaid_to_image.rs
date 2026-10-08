@@ -10,6 +10,7 @@ use sha2::Digest;
 use sha2::Sha256;
 
 use super::ActionContext;
+use crate::render::chrome::ChromeRenderer;
 use crate::render::mermaid::mermaid_to_svg;
 use crate::render::page::svg_to_image;
 
@@ -19,7 +20,9 @@ const HASH_LEN: usize = 12;
 /// Replace every ```` ```mermaid ```` block under `root` with a PNG that `ctx.renderer` renders into
 /// `ctx.assets_dir`.
 pub fn apply<'a>(arena: &'a Arena<'a>, root: Node<'a>, ctx: &ActionContext) -> anyhow::Result<()> {
-    replace_code_blocks(arena, root, "mermaid", |source| render(source, ctx))
+    replace_code_blocks(arena, root, "mermaid", |source| {
+        render(source, "mermaid", mermaid_to_svg, ctx)
+    })
 }
 
 /// Replace every fenced code block under `root` whose language is `lang` with an image whose URL
@@ -62,15 +65,20 @@ fn source_of(node: Node<'_>, lang: &str) -> Option<String> {
     Some(code.literal.clone())
 }
 
-/// Render the diagram `source` to a PNG in `ctx.assets_dir` and return the PNG's URL relative to
-/// the output file.
-fn render(source: &str, ctx: &ActionContext) -> anyhow::Result<String> {
-    let svg = mermaid_to_svg(&ctx.renderer, source)?;
+/// Render the diagram `source` with `to_svg` to a PNG in `ctx.assets_dir` and return the PNG's URL
+/// relative to the output file; the PNG is named `<stem>-<lang>-<hash of source>.png`.
+pub(crate) fn render(
+    source: &str,
+    lang: &str,
+    to_svg: fn(&ChromeRenderer, &str) -> anyhow::Result<String>,
+    ctx: &ActionContext,
+) -> anyhow::Result<String> {
+    let svg = to_svg(&ctx.renderer, source)?;
     let png = svg_to_image(&ctx.renderer, &svg)?;
 
     let digest = Sha256::digest(source.as_bytes());
     let hash = format!("{digest:x}");
-    let name = format!("{}-mermaid-{}.png", ctx.stem, &hash[..HASH_LEN]);
+    let name = format!("{}-{}-{}.png", ctx.stem, lang, &hash[..HASH_LEN]);
     let path = ctx.assets_dir.join(name);
     fs::write(&path, png).with_context(|| format!("Failed to write image: {}", path.display()))?;
 
