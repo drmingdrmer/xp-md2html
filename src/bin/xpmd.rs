@@ -120,7 +120,7 @@ struct ProcessArgs {
     #[arg(long, default_value = "2")]
     scale: u32,
 
-    /// An action to apply, in the given order; one of: table-to-image, download-images, embed-markdown, image-to-asset, table-to-html, mermaid-to-image, graphviz-to-image, code-to-image[=WIDTH], math-to-image, math-to-img-tag=SERVICE with SERVICE one of zhihu, codecogs, upmath, wordpress
+    /// An action to apply, in the given order; one of: table-to-image, download-images, embed-markdown, image-to-asset, table-to-html, mermaid-to-image, graphviz-to-image, code-to-image[=WIDTH], math-to-image[=SERVICE], math-to-img-tag=SERVICE with SERVICE one of zhihu, codecogs, upmath, wordpress
     #[arg(long = "action", required = true)]
     actions: Vec<Action>,
 }

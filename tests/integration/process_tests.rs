@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
@@ -196,6 +197,45 @@ fn test_process_math_to_image() -> Result<()> {
         let magic = image.get(..PNG_MAGIC.len());
         assert_eq!(magic, Some(PNG_MAGIC.as_slice()), "{name}");
     }
+    Ok(())
+}
+
+/// `xpmd process --action math-to-image=codecogs` links every formula to the image at the URL where
+/// CodeCogs draws it, and writes no file into `--assets`.
+#[test]
+fn test_process_math_to_image_service() -> Result<()> {
+    let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let input = root_dir.join("tests/fixtures/math.md");
+    let output_dir = tempfile::tempdir()?;
+    let output = output_dir.path().join("post.md");
+    let assets = output_dir.path().join("assets");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "math-to-image=codecogs", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("--assets")
+        .arg(&assets)
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let expected_markdown = "# Math\n\n\
+        Inline ![](https://latex.codecogs.com/svg.image?x%5E2) here.\n\n\
+        ![](https://latex.codecogs.com/svg.image?%5Cdisplaystyle%20%5Csum_%7Bi%3D1%7D%5E%7Bn%7D%20i)\n\n\
+        ![](https://latex.codecogs.com/svg.image?%5Cdisplaystyle%20E%20%3D%20mc%5E2)\n\n\
+        Done.\n";
+    assert_eq!(markdown, expected_markdown);
+
+    let mut written = Vec::new();
+    for entry in fs::read_dir(&assets)? {
+        let entry = entry?;
+        written.push(entry.file_name());
+    }
+    assert_eq!(written, Vec::<OsString>::new());
     Ok(())
 }
 

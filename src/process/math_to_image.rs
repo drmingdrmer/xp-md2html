@@ -1,4 +1,5 @@
-//! `math-to-image`: render every formula to a PNG and link the PNG where the formula was.
+//! `math-to-image`: render every formula to a PNG and link the PNG where the formula was;
+//! `math-to-image=SERVICE` links the image of an online formula service instead.
 
 use std::collections::HashMap;
 use std::fs;
@@ -14,17 +15,28 @@ use super::code_to_image::MATH_LANG;
 use super::mermaid_to_image::replace_code_blocks;
 use super::ActionContext;
 use crate::render::math::math_page;
+use crate::render::math_img::math_url;
+use crate::render::math_img::MathService;
 
 /// How many hex digits of the formula's hash the file name keeps.
 const HASH_LEN: usize = 12;
 
 /// Replace every `$..$` and `$$..$$` formula and every ```` ```math ```` block under `root` with a
-/// PNG that `ctx.renderer` renders into `ctx.assets_dir`.
-pub fn apply<'a>(arena: &'a Arena<'a>, root: Node<'a>, ctx: &ActionContext) -> anyhow::Result<()> {
+/// PNG that `ctx.renderer` renders into `ctx.assets_dir`, or, with a `service`, with the image at
+/// the URL where the service draws the formula.
+pub fn apply<'a>(
+    arena: &'a Arena<'a>,
+    root: Node<'a>,
+    service: Option<MathService>,
+    ctx: &ActionContext,
+) -> anyhow::Result<()> {
     // A formula such as `$n$` often repeats, and every render runs Chrome, so a repeat reuses the
     // URL of the first render.
     let mut urls: HashMap<(String, bool), String> = HashMap::new();
     let mut image_url = |tex: &str, display: bool| -> anyhow::Result<String> {
+        if let Some(service) = service {
+            return Ok(math_url(service, tex, display));
+        }
         let key = (tex.to_string(), display);
         if let Some(url) = urls.get(&key) {
             return Ok(url.clone());

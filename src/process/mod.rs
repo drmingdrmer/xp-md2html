@@ -64,8 +64,13 @@ pub enum Action {
         /// The width in pixels at which a block without a language wraps.
         width: u32,
     },
-    /// Replace every formula, also a ```` ```math ```` block, with a PNG of it.
-    MathToImage,
+    /// Replace every formula, also a ```` ```math ```` block, with a PNG of it, or with the image
+    /// of an online formula service.
+    MathToImage {
+        /// The service whose image URL replaces each formula; without one, each formula becomes a
+        /// PNG in the assets dir.
+        service: Option<MathService>,
+    },
     /// Replace every formula, also a ```` ```math ```` block, with the `<img>` tag of an online
     /// formula service.
     MathToImgTag {
@@ -101,7 +106,15 @@ impl FromStr for Action {
                 })?;
                 Ok(Self::CodeToImage { width })
             }
-            ("math-to-image", None) => Ok(Self::MathToImage),
+            ("math-to-image", None) => Ok(Self::MathToImage { service: None }),
+            ("math-to-image", Some(service)) => {
+                let service = service
+                    .parse()
+                    .map_err(|error| format!("invalid action: {name}; {error}"))?;
+                Ok(Self::MathToImage {
+                    service: Some(service),
+                })
+            }
             ("math-to-img-tag", Some(service)) => {
                 let service = service
                     .parse()
@@ -133,7 +146,7 @@ impl Action {
             Self::MermaidToImage => mermaid_to_image::apply(arena, root, ctx),
             Self::GraphvizToImage => graphviz_to_image::apply(arena, root, ctx),
             Self::CodeToImage { width } => code_to_image::apply(arena, root, *width, ctx),
-            Self::MathToImage => math_to_image::apply(arena, root, ctx),
+            Self::MathToImage { service } => math_to_image::apply(arena, root, *service, ctx),
             Self::MathToImgTag { service } => {
                 math_to_img_tag::apply(root, *service);
                 Ok(())
@@ -258,6 +271,15 @@ mod tests {
         let expected_error =
             "invalid action: code-to-image=wide; code-to-image=WIDTH takes a width in pixels";
         assert_eq!(bad_width, Err(expected_error.to_string()));
+
+        let math_image = Action::from_str("math-to-image");
+        assert_eq!(math_image, Ok(Action::MathToImage { service: None }));
+
+        let math_url_image = Action::from_str("math-to-image=codecogs");
+        let expected_math_url_image = Action::MathToImage {
+            service: Some(MathService::Codecogs),
+        };
+        assert_eq!(math_url_image, Ok(expected_math_url_image));
 
         let img_tag = Action::from_str("math-to-img-tag=upmath");
         let expected_img_tag = Action::MathToImgTag {
