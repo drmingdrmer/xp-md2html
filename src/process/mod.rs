@@ -6,6 +6,7 @@ pub mod embed_markdown;
 pub mod graphviz_to_image;
 pub mod image_to_asset;
 pub mod math_to_image;
+pub mod math_to_zhihu_img;
 pub mod mermaid_to_image;
 pub mod table_to_html;
 pub mod table_to_image;
@@ -63,6 +64,9 @@ pub enum Action {
     },
     /// Replace every formula, also a ```` ```math ```` block, with a PNG of it.
     MathToImage,
+    /// Replace every formula, also a ```` ```math ```` block, with the `<img>` tag of zhihu's
+    /// equation service.
+    MathToZhihuImg,
 }
 
 impl FromStr for Action {
@@ -88,6 +92,7 @@ impl FromStr for Action {
                 width: code_to_image::DEFAULT_WIDTH,
             }),
             "math-to-image" => Ok(Self::MathToImage),
+            "math-to-zhihu-img" => Ok(Self::MathToZhihuImg),
             _ => Err(format!("unknown action: {name}")),
         }
     }
@@ -111,6 +116,10 @@ impl Action {
             Self::GraphvizToImage => graphviz_to_image::apply(arena, root, ctx),
             Self::CodeToImage { width } => code_to_image::apply(arena, root, *width, ctx),
             Self::MathToImage => math_to_image::apply(arena, root, ctx),
+            Self::MathToZhihuImg => {
+                math_to_zhihu_img::apply(root);
+                Ok(())
+            }
         }
     }
 }

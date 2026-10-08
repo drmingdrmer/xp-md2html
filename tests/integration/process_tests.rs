@@ -199,6 +199,40 @@ fn test_process_math_to_image() -> Result<()> {
     Ok(())
 }
 
+/// `xpmd process --action math-to-zhihu-img` replaces every formula with the `<img>` tag of zhihu's
+/// equation service; the TeX of a `$$` formula or a ```` ```math ```` block ends with `\\`.
+#[test]
+fn test_process_math_to_zhihu_img() -> Result<()> {
+    let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let input = root_dir.join("tests/fixtures/math.md");
+    let output_dir = tempfile::tempdir()?;
+    let output = output_dir.path().join("post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "math-to-zhihu-img", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let expected_markdown = concat!(
+        "# Math\n\n",
+        r#"Inline <img src="https://www.zhihu.com/equation?tex=x%5E2" alt="x^2" class="ee_img tr_noresize" eeimg="1"> here."#,
+        "\n\n",
+        r#"<img src="https://www.zhihu.com/equation?tex=%5Csum_%7Bi%3D1%7D%5E%7Bn%7D%20i%5C%5C" alt="\sum_{i=1}^{n} i\\" class="ee_img tr_noresize" eeimg="1">"#,
+        "\n\n",
+        r#"<img src="https://www.zhihu.com/equation?tex=E%20%3D%20mc%5E2%5C%5C" alt="E = mc^2\\" class="ee_img tr_noresize" eeimg="1">"#,
+        "\n\n",
+        "Done.\n",
+    );
+    assert_eq!(markdown, expected_markdown);
+    Ok(())
+}
+
 /// `xpmd process --action table-to-html` writes the table as a bare `<table>` of rows.
 #[test]
 fn test_process_table_to_html() -> Result<()> {

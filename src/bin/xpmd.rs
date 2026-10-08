@@ -116,7 +116,7 @@ struct ProcessArgs {
     #[arg(long, default_value = "2")]
     scale: u32,
 
-    /// An action to apply, in the given order; one of: table-to-image, download-images, embed-markdown, image-to-asset, table-to-html, mermaid-to-image, graphviz-to-image, code-to-image[=WIDTH], math-to-image
+    /// An action to apply, in the given order; one of: table-to-image, download-images, embed-markdown, image-to-asset, table-to-html, mermaid-to-image, graphviz-to-image, code-to-image[=WIDTH], math-to-image, math-to-zhihu-img
     #[arg(long = "action", required = true)]
     actions: Vec<Action>,
 }
