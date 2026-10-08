@@ -6,7 +6,7 @@ pub mod embed_markdown;
 pub mod graphviz_to_image;
 pub mod image_to_asset;
 pub mod math_to_image;
-pub mod math_to_zhihu_img;
+pub mod math_to_img_tag;
 pub mod mermaid_to_image;
 pub mod table_to_html;
 pub mod table_to_image;
@@ -24,6 +24,8 @@ use comrak::Node;
 use comrak::Options;
 
 use crate::render::chrome::ChromeRenderer;
+use crate::render::math_img::MathService;
+use crate::render::math_img::SERVICE_NAMES;
 
 /// What an action reads and writes besides the tree.
 pub struct ActionContext {
@@ -64,35 +66,51 @@ pub enum Action {
     },
     /// Replace every formula, also a ```` ```math ```` block, with a PNG of it.
     MathToImage,
-    /// Replace every formula, also a ```` ```math ```` block, with the `<img>` tag of zhihu's
-    /// equation service.
-    MathToZhihuImg,
+    /// Replace every formula, also a ```` ```math ```` block, with the `<img>` tag of an online
+    /// formula service.
+    MathToImgTag {
+        /// The service that draws the formulas.
+        service: MathService,
+    },
 }
 
 impl FromStr for Action {
     type Err = String;
 
     fn from_str(name: &str) -> Result<Self, String> {
-        if let Some(width) = name.strip_prefix("code-to-image=") {
-            let width = width.parse().map_err(|_| {
-                format!("invalid action: {name}; code-to-image=WIDTH takes a width in pixels")
-            })?;
-            return Ok(Self::CodeToImage { width });
-        }
+        // `name=arg` passes one argument to the action.
+        let (action, arg) = match name.split_once('=') {
+            Some((action, arg)) => (action, Some(arg)),
+            None => (name, None),
+        };
 
-        match name {
-            "table-to-image" => Ok(Self::TableToImage),
-            "download-images" => Ok(Self::DownloadImages),
-            "embed-markdown" => Ok(Self::EmbedMarkdown),
-            "image-to-asset" => Ok(Self::ImageToAsset),
-            "table-to-html" => Ok(Self::TableToHtml),
-            "mermaid-to-image" => Ok(Self::MermaidToImage),
-            "graphviz-to-image" => Ok(Self::GraphvizToImage),
-            "code-to-image" => Ok(Self::CodeToImage {
+        match (action, arg) {
+            ("table-to-image", None) => Ok(Self::TableToImage),
+            ("download-images", None) => Ok(Self::DownloadImages),
+            ("embed-markdown", None) => Ok(Self::EmbedMarkdown),
+            ("image-to-asset", None) => Ok(Self::ImageToAsset),
+            ("table-to-html", None) => Ok(Self::TableToHtml),
+            ("mermaid-to-image", None) => Ok(Self::MermaidToImage),
+            ("graphviz-to-image", None) => Ok(Self::GraphvizToImage),
+            ("code-to-image", None) => Ok(Self::CodeToImage {
                 width: code_to_image::DEFAULT_WIDTH,
             }),
-            "math-to-image" => Ok(Self::MathToImage),
-            "math-to-zhihu-img" => Ok(Self::MathToZhihuImg),
+            ("code-to-image", Some(width)) => {
+                let width = width.parse().map_err(|_| {
+                    format!("invalid action: {name}; code-to-image=WIDTH takes a width in pixels")
+                })?;
+                Ok(Self::CodeToImage { width })
+            }
+            ("math-to-image", None) => Ok(Self::MathToImage),
+            ("math-to-img-tag", Some(service)) => {
+                let service = service
+                    .parse()
+                    .map_err(|error| format!("invalid action: {name}; {error}"))?;
+                Ok(Self::MathToImgTag { service })
+            }
+            ("math-to-img-tag", None) => Err(format!(
+                "invalid action: {name}; math-to-img-tag=SERVICE takes one of: {SERVICE_NAMES}"
+            )),
             _ => Err(format!("unknown action: {name}")),
         }
     }
@@ -116,8 +134,8 @@ impl Action {
             Self::GraphvizToImage => graphviz_to_image::apply(arena, root, ctx),
             Self::CodeToImage { width } => code_to_image::apply(arena, root, *width, ctx),
             Self::MathToImage => math_to_image::apply(arena, root, ctx),
-            Self::MathToZhihuImg => {
-                math_to_zhihu_img::apply(root);
+            Self::MathToImgTag { service } => {
+                math_to_img_tag::apply(root, *service);
                 Ok(())
             }
         }
@@ -240,6 +258,22 @@ mod tests {
         let expected_error =
             "invalid action: code-to-image=wide; code-to-image=WIDTH takes a width in pixels";
         assert_eq!(bad_width, Err(expected_error.to_string()));
+
+        let img_tag = Action::from_str("math-to-img-tag=upmath");
+        let expected_img_tag = Action::MathToImgTag {
+            service: MathService::Upmath,
+        };
+        assert_eq!(img_tag, Ok(expected_img_tag));
+
+        let no_service = Action::from_str("math-to-img-tag");
+        let expected_no_service = "invalid action: math-to-img-tag; \
+                                   math-to-img-tag=SERVICE takes one of: zhihu, codecogs, upmath, wordpress";
+        assert_eq!(no_service, Err(expected_no_service.to_string()));
+
+        let bad_service = Action::from_str("math-to-img-tag=mathjax");
+        let expected_bad_service = "invalid action: math-to-img-tag=mathjax; \
+                                    unknown math service: mathjax; one of: zhihu, codecogs, upmath, wordpress";
+        assert_eq!(bad_service, Err(expected_bad_service.to_string()));
     }
 
     #[test]

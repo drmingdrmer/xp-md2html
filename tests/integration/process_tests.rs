@@ -199,17 +199,17 @@ fn test_process_math_to_image() -> Result<()> {
     Ok(())
 }
 
-/// `xpmd process --action math-to-zhihu-img` replaces every formula with the `<img>` tag of zhihu's
+/// `xpmd process --action math-to-img-tag=zhihu` replaces every formula with the `<img>` tag of zhihu's
 /// equation service; the TeX of a `$$` formula or a ```` ```math ```` block ends with `\\`.
 #[test]
-fn test_process_math_to_zhihu_img() -> Result<()> {
+fn test_process_math_to_img_tag() -> Result<()> {
     let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let input = root_dir.join("tests/fixtures/math.md");
     let output_dir = tempfile::tempdir()?;
     let output = output_dir.path().join("post.md");
 
     let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
-        .args(["process", "--action", "math-to-zhihu-img", "-i"])
+        .args(["process", "--action", "math-to-img-tag=zhihu", "-i"])
         .arg(&input)
         .arg("-o")
         .arg(&output)
