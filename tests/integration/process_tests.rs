@@ -113,6 +113,50 @@ fn test_process_graphviz_to_image() -> Result<()> {
     Ok(())
 }
 
+/// `xpmd process --action code-to-image=800` replaces each code block with a PNG: a long line
+/// wraps at 600 pixels in a block with a language, and at the given 800 in a block without one.
+#[test]
+fn test_process_code_to_image() -> Result<()> {
+    let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let input = root_dir.join("tests/fixtures/code.md");
+    let output_dir = tempfile::tempdir()?;
+    let output = output_dir.path().join("post.md");
+    let assets = output_dir.path().join("assets");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args([
+            "process",
+            "--action",
+            "code-to-image=800",
+            "--scale",
+            "1",
+            "-i",
+        ])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("--assets")
+        .arg(&assets)
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let expected_markdown = "# Code\n\n\
+        ![](assets/post-code-8384d441da95.png)\n\n\
+        ![](assets/post-code-e39ad6284dc4.png)\n\n\
+        Done.\n";
+    assert_eq!(markdown, expected_markdown);
+
+    let (rust_width, _) = image::image_dimensions(assets.join("post-code-8384d441da95.png"))?;
+    assert_eq!(rust_width, 600);
+
+    let (plain_width, _) = image::image_dimensions(assets.join("post-code-e39ad6284dc4.png"))?;
+    assert_eq!(plain_width, 800);
+    Ok(())
+}
+
 /// `xpmd process --action table-to-html` writes the table as a bare `<table>` of rows.
 #[test]
 fn test_process_table_to_html() -> Result<()> {

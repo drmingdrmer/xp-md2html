@@ -17,6 +17,7 @@ use xp_md2html::render::chrome::RenderConfig;
 use xp_md2html::render::code::code_to_html;
 use xp_md2html::render::code::load_theme;
 use xp_md2html::render::code::CodeStyle;
+use xp_md2html::render::code::DEFAULT_THEME;
 use xp_md2html::render::graphviz::graphviz_to_svg;
 use xp_md2html::render::markdown::markdown_page;
 use xp_md2html::render::markdown::markdown_to_html;
@@ -115,7 +116,7 @@ struct ProcessArgs {
     #[arg(long, default_value = "2")]
     scale: u32,
 
-    /// An action to apply, in the given order; one of: table-to-image, download-images, embed-markdown, image-to-asset, table-to-html, mermaid-to-image, graphviz-to-image
+    /// An action to apply, in the given order; one of: table-to-image, download-images, embed-markdown, image-to-asset, table-to-html, mermaid-to-image, graphviz-to-image, code-to-image[=WIDTH]
     #[arg(long = "action", required = true)]
     actions: Vec<Action>,
 }
@@ -136,7 +137,7 @@ struct RenderCodeArgs {
     lang: Option<String>,
 
     /// Color theme: a built-in syntect theme name, or the path of a .tmTheme file
-    #[arg(long, default_value = "base16-ocean.dark")]
+    #[arg(long, default_value = DEFAULT_THEME)]
     theme: String,
 
     /// Width in pixels at which a line wraps

@@ -114,6 +114,11 @@ impl ChromeRenderer {
         }
     }
 
+    /// A renderer like this one, with a window `width` pixels wide and as tall as this one's.
+    pub fn with_window_width(&self, width: u32) -> Self {
+        self.with_window(width, self.config.height)
+    }
+
     /// Return the DOM of `input` as Chrome serializes it once the page has loaded and its scripts have run.
     ///
     /// A script that finishes its work in a timer callback, as mermaid does in `setTimeout(..., 0)`,

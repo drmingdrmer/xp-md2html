@@ -1,12 +1,19 @@
 //! Code to one HTML page with syntax colors, through syntect.
 
 use std::path::Path;
+use std::sync::OnceLock;
 
 use anyhow::Context;
 use syntect::highlighting::Theme;
 use syntect::highlighting::ThemeSet;
 use syntect::html::highlighted_html_for_string;
 use syntect::parsing::SyntaxSet;
+
+/// The theme that `xpmd render-code` uses by default and `code-to-image` always uses.
+pub const DEFAULT_THEME: &str = "base16-ocean.dark";
+
+/// The pixels around the `<pre>` in the page of [`code_to_html`]; the trim removes them again.
+pub const PAGE_PADDING: u32 = 8;
 
 /// The look of the page that [`code_to_html`] builds.
 pub struct CodeStyle {
@@ -42,11 +49,13 @@ pub fn load_theme(name: &str) -> anyhow::Result<Theme> {
 /// editor that drops `<style>` blocks. The `<pre>` is as wide as its longest line, up to
 /// `style.width`, so a trim cuts a screenshot of the page down to the box.
 pub fn code_to_html(lang: Option<&str>, code: &str, style: &CodeStyle) -> anyhow::Result<String> {
-    let syntax_set = SyntaxSet::load_defaults_newlines();
+    // A load takes about 50 ms, so a run that renders many blocks loads the grammars once.
+    static SYNTAX_SET: OnceLock<SyntaxSet> = OnceLock::new();
+    let syntax_set = SYNTAX_SET.get_or_init(SyntaxSet::load_defaults_newlines);
     let syntax = lang
         .and_then(|lang| syntax_set.find_syntax_by_token(lang))
         .unwrap_or_else(|| syntax_set.find_syntax_plain_text());
-    let pre = highlighted_html_for_string(code, &syntax_set, syntax, &style.theme)?;
+    let pre = highlighted_html_for_string(code, syntax_set, syntax, &style.theme)?;
 
     // A block without a language is often an ASCII diagram, which reads better with tight lines.
     let line_height = if lang.is_some() { "1.8" } else { "1.3" };
@@ -55,7 +64,7 @@ pub fn code_to_html(lang: Option<&str>, code: &str, style: &CodeStyle) -> anyhow
     let page = format!(
         "<!DOCTYPE html>\n\
          <html><head><meta charset=\"utf-8\"><style>\n\
-         body {{ margin: 0; padding: 8px; background: transparent; }}\n\
+         body {{ margin: 0; padding: {PAGE_PADDING}px; background: transparent; }}\n\
          pre {{ display: inline-block; box-sizing: border-box; max-width: {width}px; margin: 0; padding: 16px; border-radius: 6px; \
          font-family: Menlo, Consolas, \"DejaVu Sans Mono\", monospace; font-size: 14px; line-height: {line_height}; \
          white-space: pre-wrap; word-break: break-all; }}\n\

@@ -1,5 +1,6 @@
 //! The `process` subcommand: parse a markdown file, apply actions to its tree in order, print the tree.
 
+pub mod code_to_image;
 pub mod download_images;
 pub mod embed_markdown;
 pub mod graphviz_to_image;
@@ -53,12 +54,25 @@ pub enum Action {
     MermaidToImage,
     /// Replace every ```` ```graphviz ```` block with a PNG of the graph.
     GraphvizToImage,
+    /// Replace every code block with a PNG of it. It takes ```` ```mermaid ```` and
+    /// ```` ```graphviz ```` blocks too, so it runs after `mermaid-to-image` and `graphviz-to-image`.
+    CodeToImage {
+        /// The width in pixels at which a block without a language wraps.
+        width: u32,
+    },
 }
 
 impl FromStr for Action {
     type Err = String;
 
     fn from_str(name: &str) -> Result<Self, String> {
+        if let Some(width) = name.strip_prefix("code-to-image=") {
+            let width = width.parse().map_err(|_| {
+                format!("invalid action: {name}; code-to-image=WIDTH takes a width in pixels")
+            })?;
+            return Ok(Self::CodeToImage { width });
+        }
+
         match name {
             "table-to-image" => Ok(Self::TableToImage),
             "download-images" => Ok(Self::DownloadImages),
@@ -67,6 +81,9 @@ impl FromStr for Action {
             "table-to-html" => Ok(Self::TableToHtml),
             "mermaid-to-image" => Ok(Self::MermaidToImage),
             "graphviz-to-image" => Ok(Self::GraphvizToImage),
+            "code-to-image" => Ok(Self::CodeToImage {
+                width: code_to_image::DEFAULT_WIDTH,
+            }),
             _ => Err(format!("unknown action: {name}")),
         }
     }
@@ -88,6 +105,7 @@ impl Action {
             Self::TableToHtml => table_to_html::apply(arena, root),
             Self::MermaidToImage => mermaid_to_image::apply(arena, root, ctx),
             Self::GraphvizToImage => graphviz_to_image::apply(arena, root, ctx),
+            Self::CodeToImage { width } => code_to_image::apply(arena, root, *width, ctx),
         }
     }
 }
@@ -192,6 +210,17 @@ mod tests {
 
         let error = Action::from_str("shift");
         assert_eq!(error, Err("unknown action: shift".to_string()));
+
+        let code = Action::from_str("code-to-image");
+        assert_eq!(code, Ok(Action::CodeToImage { width: 1000 }));
+
+        let code_800 = Action::from_str("code-to-image=800");
+        assert_eq!(code_800, Ok(Action::CodeToImage { width: 800 }));
+
+        let bad_width = Action::from_str("code-to-image=wide");
+        let expected_error =
+            "invalid action: code-to-image=wide; code-to-image=WIDTH takes a width in pixels";
+        assert_eq!(bad_width, Err(expected_error.to_string()));
     }
 
     #[test]
