@@ -8,6 +8,7 @@ mod integration {
     pub mod render_code_tests;
     pub mod render_graphviz_tests;
     pub mod render_markdown_tests;
+    pub mod render_math_img_tests;
     pub mod render_math_tests;
     pub mod render_mermaid_tests;
     pub mod xpmd_tests;

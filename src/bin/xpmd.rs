@@ -23,6 +23,8 @@ use xp_md2html::render::markdown::markdown_page;
 use xp_md2html::render::markdown::markdown_to_html;
 use xp_md2html::render::math::math_page;
 use xp_md2html::render::math::math_to_svg;
+use xp_md2html::render::math_img::math_img_tag;
+use xp_md2html::render::math_img::MathService;
 use xp_md2html::render::mermaid::mermaid_to_svg;
 use xp_md2html::render::page::svg_to_image;
 
@@ -45,6 +47,8 @@ enum Commands {
     RenderCode(RenderCodeArgs),
     /// Render LaTeX math to SVG or an image with MathJax
     RenderMath(RenderMathArgs),
+    /// Write the <img> tag of an online service that draws a LaTeX formula
+    RenderMathImg(RenderMathImgArgs),
     /// Render a DOT graph to SVG or an image with Graphviz
     RenderGraphviz(DiagramArgs),
     /// Render a mermaid diagram to SVG or an image
@@ -169,6 +173,26 @@ struct RenderMathArgs {
     scale: u32,
 }
 
+/// The options of the `render-math-img` subcommand.
+#[derive(Args)]
+struct RenderMathImgArgs {
+    /// Input file with the TeX source, without the $ delimiters [default: stdin]
+    #[arg(short, long)]
+    input: Option<PathBuf>,
+
+    /// Output file [default: stdout]
+    #[arg(short, long)]
+    output: Option<PathBuf>,
+
+    /// The service that draws the formula; one of: zhihu, codecogs, upmath, wordpress
+    #[arg(long)]
+    service: MathService,
+
+    /// Typeset as inline math instead of display math
+    #[arg(long)]
+    inline: bool,
+}
+
 /// The options of the `render-graphviz` and `render-mermaid` subcommands.
 #[derive(Args)]
 struct DiagramArgs {
@@ -233,6 +257,9 @@ fn main() -> Result<()> {
         }
         Commands::RenderMath(args) => {
             render_math_command(args)?;
+        }
+        Commands::RenderMathImg(args) => {
+            render_math_img_command(args)?;
         }
         Commands::RenderGraphviz(args) => {
             render_diagram_command(args, graphviz_to_svg)?;
@@ -374,6 +401,22 @@ fn render_math_command(args: RenderMathArgs) -> Result<()> {
     };
 
     write_output(output.as_deref(), &data)
+}
+
+fn render_math_img_command(args: RenderMathImgArgs) -> Result<()> {
+    let RenderMathImgArgs {
+        input,
+        output,
+        service,
+        inline,
+    } = args;
+
+    let tex = read_input(input.as_deref())?;
+    let display = !inline;
+    let mut tag = math_img_tag(service, &tex, display);
+    tag.push('\n');
+
+    write_output(output.as_deref(), tag.as_bytes())
 }
 
 fn render_markdown_command(args: RenderMarkdownArgs) -> Result<()> {
