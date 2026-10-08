@@ -28,7 +28,7 @@ const LANG_WIDTH: u32 = 600;
 const HASH_LEN: usize = 12;
 
 /// The language of a block that comrak renders as display math, not as code.
-const MATH_LANG: &str = "math";
+pub(crate) const MATH_LANG: &str = "math";
 
 /// Replace every code block under `root` with a PNG that `ctx.renderer` renders into
 /// `ctx.assets_dir`; a block without a language wraps at `width` pixels, one with a language at

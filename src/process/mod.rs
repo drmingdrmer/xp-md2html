@@ -5,6 +5,7 @@ pub mod download_images;
 pub mod embed_markdown;
 pub mod graphviz_to_image;
 pub mod image_to_asset;
+pub mod math_to_image;
 pub mod mermaid_to_image;
 pub mod table_to_html;
 pub mod table_to_image;
@@ -60,6 +61,8 @@ pub enum Action {
         /// The width in pixels at which a block without a language wraps.
         width: u32,
     },
+    /// Replace every formula, also a ```` ```math ```` block, with a PNG of it.
+    MathToImage,
 }
 
 impl FromStr for Action {
@@ -84,6 +87,7 @@ impl FromStr for Action {
             "code-to-image" => Ok(Self::CodeToImage {
                 width: code_to_image::DEFAULT_WIDTH,
             }),
+            "math-to-image" => Ok(Self::MathToImage),
             _ => Err(format!("unknown action: {name}")),
         }
     }
@@ -106,6 +110,7 @@ impl Action {
             Self::MermaidToImage => mermaid_to_image::apply(arena, root, ctx),
             Self::GraphvizToImage => graphviz_to_image::apply(arena, root, ctx),
             Self::CodeToImage { width } => code_to_image::apply(arena, root, *width, ctx),
+            Self::MathToImage => math_to_image::apply(arena, root, ctx),
         }
     }
 }
@@ -124,13 +129,18 @@ pub fn gfm_math_options() -> Options<'static> {
     options
 }
 
-/// A paragraph that holds one image of `url`, the block that replaces a table or a diagram.
-pub(crate) fn image_paragraph<'a>(arena: &'a Arena<'a>, url: String) -> Node<'a> {
+/// An image of `url` without alt text, the inline that replaces a formula.
+pub(crate) fn image_node<'a>(arena: &'a Arena<'a>, url: String) -> Node<'a> {
     let link = NodeLink {
         url,
         title: String::new(),
     };
-    let image = arena.alloc(NodeValue::Image(Box::new(link)).into());
+    arena.alloc(NodeValue::Image(Box::new(link)).into())
+}
+
+/// A paragraph that holds one image of `url`, the block that replaces a table or a diagram.
+pub(crate) fn image_paragraph<'a>(arena: &'a Arena<'a>, url: String) -> Node<'a> {
+    let image = image_node(arena, url);
     let paragraph = arena.alloc(NodeValue::Paragraph.into());
     paragraph.append(image);
     paragraph

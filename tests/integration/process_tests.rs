@@ -157,6 +157,48 @@ fn test_process_code_to_image() -> Result<()> {
     Ok(())
 }
 
+/// `xpmd process --action math-to-image` replaces inline math with an inline image, and a `$$`
+/// formula or a ```` ```math ```` block with a paragraph that holds one image.
+#[test]
+fn test_process_math_to_image() -> Result<()> {
+    let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let input = root_dir.join("tests/fixtures/math.md");
+    let output_dir = tempfile::tempdir()?;
+    let output = output_dir.path().join("post.md");
+    let assets = output_dir.path().join("assets");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "math-to-image", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("--assets")
+        .arg(&assets)
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let expected_markdown = "# Math\n\n\
+        Inline ![](assets/post-math-7f408224ea7b.png) here.\n\n\
+        ![](assets/post-math-ed3f5d5080ba.png)\n\n\
+        ![](assets/post-math-905b5391d6ab.png)\n\n\
+        Done.\n";
+    assert_eq!(markdown, expected_markdown);
+
+    for name in [
+        "post-math-7f408224ea7b.png",
+        "post-math-ed3f5d5080ba.png",
+        "post-math-905b5391d6ab.png",
+    ] {
+        let image = fs::read(assets.join(name))?;
+        let magic = image.get(..PNG_MAGIC.len());
+        assert_eq!(magic, Some(PNG_MAGIC.as_slice()), "{name}");
+    }
+    Ok(())
+}
+
 /// `xpmd process --action table-to-html` writes the table as a bare `<table>` of rows.
 #[test]
 fn test_process_table_to_html() -> Result<()> {
