@@ -1,5 +1,6 @@
 //! The `process` subcommand: parse a markdown file, apply actions to its tree in order, print the tree.
 
+pub mod append_reference_list;
 pub mod code_to_image;
 pub mod download_images;
 pub mod drop_front_matter;
@@ -80,6 +81,8 @@ pub enum Action {
     },
     /// Remove the `---` front matter block at the top of the file.
     DropFrontMatter,
+    /// Append a list of the link references that the file uses.
+    AppendReferenceList,
 }
 
 impl FromStr for Action {
@@ -128,17 +131,20 @@ impl FromStr for Action {
                 "invalid action: {name}; math-to-img-tag=SERVICE takes one of: {SERVICE_NAMES}"
             )),
             ("drop-front-matter", None) => Ok(Self::DropFrontMatter),
+            ("append-reference-list", None) => Ok(Self::AppendReferenceList),
             _ => Err(format!("unknown action: {name}")),
         }
     }
 }
 
 impl Action {
-    /// Apply this action to the tree under `root`, which `arena` owns.
+    /// Apply this action to the tree under `root`, which `arena` owns and comrak parsed from
+    /// `source`.
     pub fn apply<'a>(
         &self,
         arena: &'a Arena<'a>,
         root: Node<'a>,
+        source: &str,
         ctx: &ActionContext,
     ) -> anyhow::Result<()> {
         match self {
@@ -159,6 +165,7 @@ impl Action {
                 drop_front_matter::apply(root);
                 Ok(())
             }
+            Self::AppendReferenceList => append_reference_list::apply(arena, root, source),
         }
     }
 }
@@ -205,7 +212,7 @@ pub fn process_markdown(
     let root = comrak::parse_document(&arena, markdown, &options);
 
     for action in actions {
-        action.apply(&arena, root, ctx)?;
+        action.apply(&arena, root, markdown, ctx)?;
     }
 
     let mut out = String::new();

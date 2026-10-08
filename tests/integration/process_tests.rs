@@ -296,6 +296,35 @@ fn test_process_drop_front_matter() -> Result<()> {
     Ok(())
 }
 
+/// `xpmd process --action append-reference-list` lists the definition a link uses at the end.
+#[test]
+fn test_process_append_reference_list() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let input = dir.path().join("post.md");
+    fs::write(
+        &input,
+        "See [the post][p] and [c](http://c.com).\n\n[p]: http://p.com \"Post\"\n",
+    )?;
+    let output = dir.path().join("out/post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "append-reference-list", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let expected_markdown = "See [the post](http://p.com \"Post\") and [c](http://c.com).\n\n\
+                             Reference:\n\n\
+                             - Post : [http://p.com](http://p.com)\n";
+    assert_eq!(markdown, expected_markdown);
+    Ok(())
+}
+
 /// `xpmd process --action table-to-html` writes the table as a bare `<table>` of rows.
 #[test]
 fn test_process_table_to_html() -> Result<()> {
