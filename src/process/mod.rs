@@ -82,7 +82,7 @@ impl ActionContext {
     }
 
     /// The local file that the image or link URL `url` in the tree names; None for a URL that names
-    /// no local file, such as `https://x` or `data:x`.
+    /// no local file, such as `https://x`, `//x` or `data:x`.
     ///
     /// A URL under `url_base`, and a relative URL whose file is in `output_dir`, name a file in
     /// `output_dir`, as a link that `link_to` made does. A root path `/x`, and any other relative URL,
@@ -91,7 +91,7 @@ impl ActionContext {
         if let Some(path) = self.path_under_url_base(url) {
             return Some(self.output_dir.join(path));
         }
-        if url.starts_with('/') {
+        if embed_markdown::is_root_path(url) {
             let file = embed_markdown::resolve(&self.input_dir, &self.input_dir, url);
             return Some(file);
         }
@@ -419,6 +419,15 @@ fn absolute_normalized(path: &Path) -> anyhow::Result<PathBuf> {
         }
     }
     Ok(normalized)
+}
+
+/// `url`, with `https:` in front when it is a protocol-relative URL `//x`: github.com, served over
+/// https, loads it from `https://x`.
+fn with_scheme(url: &str) -> String {
+    if url.starts_with("//") {
+        return format!("https:{url}");
+    }
+    url.to_string()
 }
 
 #[cfg(test)]

@@ -65,12 +65,13 @@ fn render(table: Node<'_>, ctx: &ActionContext) -> anyhow::Result<String> {
     let mut markdown = String::new();
     comrak::format_commonmark(table, &options, &mut markdown)?;
 
-    // Chrome loads the page from a temporary directory, where a relative URL names no file, and a
-    // URL under the URL base names a file that is not online yet.
+    // Chrome loads the page from a temporary directory: a relative URL there names no file, a URL
+    // under the URL base names a file that is not online yet, and a protocol-relative URL `//x`
+    // becomes `file://x`.
     let file_urls = file_urls(table, ctx)?;
     let rewrite = move |url: &str| match file_urls.get(url) {
         Some(file_url) => file_url.clone(),
-        None => url.to_string(),
+        None => super::with_scheme(url),
     };
     options.extension.image_url_rewriter = Some(Arc::new(rewrite));
     let mut html = String::new();

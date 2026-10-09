@@ -122,6 +122,11 @@ fn rebase_urls(root: Node<'_>, from_dir: &Path, to_dir: &Path) -> anyhow::Result
     Ok(())
 }
 
+/// A URL that is a root path `/x`; not a protocol-relative URL `//x`, which names a host.
+pub(super) fn is_root_path(url: &str) -> bool {
+    url.starts_with('/') && !url.starts_with("//")
+}
+
 /// A URL that is a relative path: not a scheme (`https:`, `mailto:`), a root path `/x`, or an anchor `#x`.
 pub(super) fn is_relative(url: &str) -> bool {
     if url.starts_with('/') || url.starts_with('#') {

@@ -42,9 +42,10 @@ pub fn relink_local_images(
     Ok(())
 }
 
-/// A URL that names a file: a relative path, or a root path `/x`; not a scheme URL or an anchor.
+/// A URL that names a file: a relative path, or a root path `/x`; not a scheme URL, a
+/// protocol-relative URL `//x` or an anchor.
 fn is_local(url: &str) -> bool {
-    url.starts_with('/') || embed_markdown::is_relative(url)
+    embed_markdown::is_root_path(url) || embed_markdown::is_relative(url)
 }
 
 /// Copy the image at `url`, which resolves against `input_dir`, into `assets_dir` under a name
@@ -76,7 +77,7 @@ mod tests {
 
     #[test]
     fn test_relink_local_images() -> anyhow::Result<()> {
-        let markdown = "![a](img/a.png) ![r](/r.png) ![h](https://x.io/h.png) ![d](data:image/png;base64,AA==) [l](l.png)\n";
+        let markdown = "![a](img/a.png) ![r](/r.png) ![h](https://x.io/h.png) ![p](//x.io/p.png) ![d](data:image/png;base64,AA==) [l](l.png)\n";
         let arena = Arena::new();
         let options = super::super::gfm_math_options();
         let root = comrak::parse_document(&arena, markdown, &options);
@@ -92,7 +93,7 @@ mod tests {
         comrak::format_commonmark(root, &options, &mut out)?;
         assert_eq!(
             out,
-            "![a](assets/img/a.png) ![r](assets/r.png) ![h](https://x.io/h.png) ![d](data:image/png;base64,AA==) [l](l.png)\n"
+            "![a](assets/img/a.png) ![r](assets/r.png) ![h](https://x.io/h.png) ![p](//x.io/p.png) ![d](data:image/png;base64,AA==) [l](l.png)\n"
         );
         Ok(())
     }

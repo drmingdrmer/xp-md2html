@@ -30,7 +30,8 @@ pub fn apply(root: Node<'_>, ctx: &ActionContext) -> anyhow::Result<()> {
     })
 }
 
-/// Replace the URL of every `http(s)://` image under `root` with what `local_url` returns for it.
+/// Replace the URL of every `http(s)://` image under `root`, also of a protocol-relative one `//x`,
+/// with what `local_url` returns for its `http(s)://` URL.
 pub fn relink_remote_images(
     root: Node<'_>,
     mut local_url: impl FnMut(&str) -> anyhow::Result<String>,
@@ -40,10 +41,11 @@ pub fn relink_remote_images(
         let NodeValue::Image(link) = &mut ast.value else {
             continue;
         };
-        if !is_remote(&link.url) {
+        let url = super::with_scheme(&link.url);
+        if !is_remote(&url) {
             continue;
         }
-        link.url = local_url(&link.url)?;
+        link.url = local_url(&url)?;
     }
     Ok(())
 }
@@ -103,11 +105,12 @@ mod tests {
 
     use super::*;
 
-    /// Every `http(s)://` image is relinked, also one inside a link; a local image is left alone.
+    /// Every `http(s)://` image is relinked, also one inside a link, and a protocol-relative one
+    /// `//x` by its `https://` URL; a local image is left alone.
     #[test]
     fn test_relink_remote_images() -> anyhow::Result<()> {
-        let markdown =
-            "![a](http://h/a.png) ![b](local/b.png)\n\n[![c](https://h/c.png)](https://h/)\n";
+        let markdown = "![a](http://h/a.png) ![b](local/b.png) ![d](//h/d.png)\n\n\
+                        [![c](https://h/c.png)](https://h/)\n";
         let options = super::super::gfm_math_options();
         let arena = comrak::Arena::new();
         let root = comrak::parse_document(&arena, markdown, &options);
@@ -118,13 +121,17 @@ mod tests {
             Ok(format!("assets/img{}.png", seen.len()))
         })?;
 
-        let expected_seen = vec!["http://h/a.png".to_string(), "https://h/c.png".to_string()];
+        let expected_seen = vec![
+            "http://h/a.png".to_string(),
+            "https://h/d.png".to_string(),
+            "https://h/c.png".to_string(),
+        ];
         assert_eq!(seen, expected_seen);
 
         let mut out = String::new();
         comrak::format_commonmark(root, &options, &mut out)?;
-        let expected =
-            "![a](assets/img1.png) ![b](local/b.png)\n\n[![c](assets/img2.png)](https://h/)\n";
+        let expected = "![a](assets/img1.png) ![b](local/b.png) ![d](assets/img2.png)\n\n\
+                        [![c](assets/img3.png)](https://h/)\n";
         assert_eq!(out, expected);
         Ok(())
     }
