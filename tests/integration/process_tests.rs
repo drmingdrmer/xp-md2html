@@ -325,6 +325,29 @@ fn test_process_append_reference_list() -> Result<()> {
     Ok(())
 }
 
+/// `xpmd process --action math-block-to-one-line` prints a `$$` formula in a list item on one line.
+#[test]
+fn test_process_math_block_to_one_line() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let input = dir.path().join("post.md");
+    fs::write(&input, "- Sum $$\n  a + b\n  $$\n")?;
+    let output = dir.path().join("out/post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "math-block-to-one-line", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    assert_eq!(markdown, "- Sum $$a + b$$\n");
+    Ok(())
+}
+
 /// `xpmd process --action table-to-html` writes the table as a bare `<table>` of rows.
 #[test]
 fn test_process_table_to_html() -> Result<()> {
