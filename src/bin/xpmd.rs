@@ -129,7 +129,7 @@ struct ProcessArgs {
 
     /// Run the actions of an md2zhihu platform before the --action ones; NAME is one of: zhihu, github, wechat, weibo, simple, minimal_mistake, transparent
     ///
-    /// Every preset runs embed-markdown, drop-front-matter, image-to-asset and append-reference-list, then:
+    /// Every preset runs join-math-block, embed-markdown, drop-front-matter, image-to-asset and append-reference-list, then:
     ///
     /// zhihu: math-to-img-tag=zhihu, table-to-html, mermaid-to-image, graphviz-to-image
     ///
@@ -155,7 +155,7 @@ struct ProcessArgs {
     #[arg(long = "refs", value_name = "FILE")]
     ref_files: Vec<PathBuf>,
 
-    /// An action to apply, in the given order; one of: table-to-image, download-images, embed-markdown, image-to-asset, table-to-html, mermaid-to-image, graphviz-to-image, code-to-image[=WIDTH], math-to-image[=SERVICE], math-to-img-tag=SERVICE, drop-front-matter, append-reference-list, math-block-to-one-line, math-inline-to-text, codespan-to-text, flatten-lists, rewrite-image-urls=/REGEX/REPL/, rewrite-link-urls=/REGEX/REPL/; SERVICE is one of zhihu, codecogs, upmath, wordpress; any character can stand for the / of /REGEX/REPL/, and REPL writes a group as \1
+    /// An action to apply, in the given order; one of: table-to-image, download-images, embed-markdown, image-to-asset, table-to-html, mermaid-to-image, graphviz-to-image, code-to-image[=WIDTH], math-to-image[=SERVICE], math-to-img-tag=SERVICE, drop-front-matter, append-reference-list, math-block-to-one-line, math-inline-to-text, codespan-to-text, flatten-lists, rewrite-image-urls=/REGEX/REPL/, rewrite-link-urls=/REGEX/REPL/, join-math-block; SERVICE is one of zhihu, codecogs, upmath, wordpress; any character can stand for the / of /REGEX/REPL/, and REPL writes a group as \1; join-math-block joins a $$ formula that blank lines split, before the parse, wherever it is listed
     #[arg(long = "action", required_unless_present = "preset")]
     actions: Vec<Action>,
 }

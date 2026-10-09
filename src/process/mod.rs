@@ -9,6 +9,7 @@ pub mod embed_markdown;
 pub mod flatten_lists;
 pub mod graphviz_to_image;
 pub mod image_to_asset;
+pub mod join_math_block;
 pub mod math_block_to_one_line;
 pub mod math_inline_to_text;
 pub mod math_to_image;
@@ -136,6 +137,9 @@ pub enum Action {
         /// The `/REGEX/REPL/` rule.
         rule: UrlRewrite,
     },
+    /// Join the paragraphs of a `$$` formula that blank lines split. It edits the input file's text
+    /// before the parse, so it takes effect wherever it is listed.
+    JoinMathBlock,
 }
 
 impl FromStr for Action {
@@ -204,6 +208,7 @@ impl FromStr for Action {
             ("rewrite-image-urls" | "rewrite-link-urls", None) => Err(format!(
                 "invalid action: {name}; {name}=/REGEX/REPL/ takes a rule"
             )),
+            ("join-math-block", None) => Ok(Self::JoinMathBlock),
             _ => Err(format!("unknown action: {name}")),
         }
     }
@@ -257,6 +262,8 @@ impl Action {
             }
             Self::RewriteImageUrls { rule } => rewrite_urls::apply_to_images(root, rule),
             Self::RewriteLinkUrls { rule } => rewrite_urls::apply_to_links(root, rule),
+            // `process_markdown` joins the text before the parse.
+            Self::JoinMathBlock => Ok(()),
         }
     }
 }
@@ -300,11 +307,17 @@ pub fn process_markdown(
 ) -> anyhow::Result<String> {
     let mut options = gfm_math_options();
     options.parse.broken_link_callback = Some(ctx.refs.broken_link_callback());
+    let joins = actions.contains(&Action::JoinMathBlock);
+    let markdown = if joins {
+        join_math_block::join(markdown)
+    } else {
+        markdown.to_string()
+    };
     let arena = Arena::new();
-    let root = comrak::parse_document(&arena, markdown, &options);
+    let root = comrak::parse_document(&arena, &markdown, &options);
 
     for action in actions {
-        action.apply(&arena, root, markdown, ctx)?;
+        action.apply(&arena, root, &markdown, ctx)?;
     }
     escape_dollars(&arena, root);
 

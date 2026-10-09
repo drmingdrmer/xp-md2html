@@ -376,6 +376,31 @@ fn test_process_math_block_to_one_line() -> Result<()> {
     Ok(())
 }
 
+/// `xpmd process --action join-math-block` reads a `$$` formula that a blank line splits as one,
+/// with its TeX as written, also for an action listed before it.
+#[test]
+fn test_process_join_math_block() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let input = dir.path().join("post.md");
+    fs::write(&input, "- $$\n  a\\,b_{i} *c*\n\n  d\n  $$\n")?;
+    let output = dir.path().join("out/post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "math-block-to-one-line"])
+        .args(["--action", "join-math-block", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    assert_eq!(markdown, "- $$a\\,b_{i} *c* d$$\n");
+    Ok(())
+}
+
 /// `xpmd process --action math-inline-to-text` replaces an inline formula with Unicode text.
 #[test]
 fn test_process_math_inline_to_text() -> Result<()> {

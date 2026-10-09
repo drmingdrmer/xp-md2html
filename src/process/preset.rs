@@ -62,13 +62,15 @@ impl Preset {
 
     /// The actions that give md2zhihu's result for this platform, in order.
     ///
-    /// md2zhihu embeds the `.md` images, drops the front matter, copies the local images and lists
-    /// the references on every platform. These steps run before the conversions:
+    /// md2zhihu joins the `$$` formulas that blank lines split, embeds the `.md` images, drops the
+    /// front matter, copies the local images and lists the references on every platform. These steps
+    /// run before the conversions:
     /// - `image-to-asset` would take an image that a conversion creates for a local image of the input.
     /// - No conversion changes the reference list, except weibo's `flatten-lists`, which flattens it
     ///   as md2zhihu writes it for Weibo: without a `<p>` in a `<li>`.
     pub fn actions(self) -> Vec<Action> {
         let mut actions = vec![
+            Action::JoinMathBlock,
             Action::EmbedMarkdown,
             Action::DropFrontMatter,
             Action::ImageToAsset,
@@ -166,6 +168,7 @@ mod tests {
     fn test_actions() {
         let zhihu = Preset::Zhihu.actions();
         let expected_zhihu = vec![
+            Action::JoinMathBlock,
             Action::EmbedMarkdown,
             Action::DropFrontMatter,
             Action::ImageToAsset,
@@ -181,6 +184,7 @@ mod tests {
 
         let transparent = Preset::Transparent.actions();
         let expected_transparent = vec![
+            Action::JoinMathBlock,
             Action::EmbedMarkdown,
             Action::DropFrontMatter,
             Action::ImageToAsset,
