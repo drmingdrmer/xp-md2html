@@ -320,7 +320,35 @@ fn test_process_append_reference_list() -> Result<()> {
     let markdown = fs::read_to_string(&output)?;
     let expected_markdown = "See [the post](http://p.com \"Post\") and [c](http://c.com).\n\n\
                              Reference:\n\n\
-                             - Post : [http://p.com](http://p.com)\n";
+                             - Post : <http://p.com>\n";
+    assert_eq!(markdown, expected_markdown);
+    Ok(())
+}
+
+/// `rewrite-link-urls` after `append-reference-list` rewrites the URLs in the reference list too.
+#[test]
+fn test_process_rewrite_reference_list() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let input = dir.path().join("post.md");
+    fs::write(&input, "See [p][p].\n\n[p]: https://old.com/p \"P\"\n")?;
+    let output = dir.path().join("out/post.md");
+    let link_rule = "rewrite-link-urls=|^https://old\\.com/|https://new.com/|";
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .args(["--action", "append-reference-list", "--action", link_rule])
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let expected_markdown = "See [p](https://new.com/p \"P\").\n\n\
+                             Reference:\n\n\
+                             - P : <https://new.com/p>\n";
     assert_eq!(markdown, expected_markdown);
     Ok(())
 }

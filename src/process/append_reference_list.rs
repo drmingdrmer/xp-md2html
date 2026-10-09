@@ -4,6 +4,8 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 
+use comrak::nodes::NodeLink;
+use comrak::nodes::NodeList;
 use comrak::nodes::NodeValue;
 use comrak::Arena;
 use comrak::Node;
@@ -16,7 +18,7 @@ struct Reference {
     title: Option<String>,
 }
 
-/// Append to `root` a "Reference:" list with one `- <title, or label> : [url](url)` item for each
+/// Append to `root` a "Reference:" list with one `- <title, or label> : <url>` item for each
 /// definition in `source` that a `[text][label]`, `[label][]` or `[label]` link uses, sorted by
 /// label.
 pub fn apply<'a>(arena: &'a Arena<'a>, root: Node<'a>, source: &str) -> anyhow::Result<()> {
@@ -25,20 +27,46 @@ pub fn apply<'a>(arena: &'a Arena<'a>, root: Node<'a>, source: &str) -> anyhow::
         return Ok(());
     }
 
-    let mut lines = vec!["Reference:".to_string()];
-    for reference in references {
-        let text = reference.title.unwrap_or(reference.label);
-        let url = reference.url;
-        lines.push(format!("- {text} : [{url}]({url})"));
-    }
-    let mut list = lines.join("\n\n");
-    list.push('\n');
+    let label = arena.alloc(NodeValue::Text("Reference:".into()).into());
+    let heading = arena.alloc(NodeValue::Paragraph.into());
+    heading.append(label);
+    root.append(heading);
 
-    // comrak writes a link whose text is its URL as `<url>`, so the list is raw markdown, which
-    // keeps md2zhihu's `[url](url)`.
-    let raw = arena.alloc(NodeValue::Raw(list).into());
-    root.append(raw);
+    // A loose list, with a blank line between the items, as md2zhihu writes it.
+    let list_meta = NodeList {
+        tight: false,
+        ..NodeList::default()
+    };
+    let list = arena.alloc(NodeValue::List(list_meta).into());
+    for reference in references {
+        let paragraph = reference_paragraph(arena, reference);
+        let item = arena.alloc(NodeValue::Item(list_meta).into());
+        item.append(paragraph);
+        list.append(item);
+    }
+    root.append(list);
     Ok(())
+}
+
+/// The paragraph `<title, or label> : <url>` of `reference`. The URL is a link node, so a later
+/// `rewrite-link-urls` rewrites it; comrak writes a link whose text is its URL as `<url>`, which
+/// renders the same as md2zhihu's `[url](url)`.
+fn reference_paragraph<'a>(arena: &'a Arena<'a>, reference: Reference) -> Node<'a> {
+    let name = reference.title.unwrap_or(reference.label);
+    let text = arena.alloc(NodeValue::Text(format!("{name} : ").into()).into());
+
+    let url_text = arena.alloc(NodeValue::Text(reference.url.clone().into()).into());
+    let link = NodeLink {
+        url: reference.url,
+        title: String::new(),
+    };
+    let link = arena.alloc(NodeValue::Link(Box::new(link)).into());
+    link.append(url_text);
+
+    let paragraph = arena.alloc(NodeValue::Paragraph.into());
+    paragraph.append(text);
+    paragraph.append(link);
+    paragraph
 }
 
 /// The definitions in `source` that a link uses, sorted by label.
@@ -127,8 +155,8 @@ mod tests {
                         [c](http://c.com).\n\n\
                         ```text\n[x]: http://x.com\n```\n\n\
                         Reference:\n\n\
-                        - A : [http://a.com](http://a.com)\n\n\
-                        - Post B : [http://b.com](http://b.com)\n";
+                        - A : <http://a.com>\n\n\
+                        - Post B : <http://b.com>\n";
         assert_eq!(out, expected);
         Ok(())
     }
