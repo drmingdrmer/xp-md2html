@@ -15,6 +15,7 @@ pub mod math_to_image;
 pub mod math_to_img_tag;
 pub mod mermaid_to_image;
 pub mod preset;
+pub mod refs;
 pub mod rewrite_urls;
 pub mod table_to_html;
 pub mod table_to_image;
@@ -31,6 +32,7 @@ use comrak::Arena;
 use comrak::Node;
 use comrak::Options;
 
+use crate::process::refs::Refs;
 use crate::process::rewrite_urls::UrlRewrite;
 use crate::render::chrome::ChromeRenderer;
 use crate::render::math_img::MathService;
@@ -48,6 +50,8 @@ pub struct ActionContext {
     pub url_base: Option<String>,
     /// The output file's stem; it prefixes the names of the files the actions create.
     pub stem: String,
+    /// The link reference definitions for the references that the markdown does not define.
+    pub refs: Refs,
     /// Renders an HTML page to a PNG.
     pub renderer: ChromeRenderer,
 }
@@ -233,7 +237,11 @@ impl Action {
                 drop_front_matter::apply(root);
                 Ok(())
             }
-            Self::AppendReferenceList => append_reference_list::apply(arena, root, source),
+            Self::AppendReferenceList => {
+                // The `markdown` crate, which finds the used references, takes no callback.
+                let source = ctx.refs.append_definitions(source);
+                append_reference_list::apply(arena, root, &source)
+            }
             Self::MathBlockToOneLine => {
                 math_block_to_one_line::apply(root);
                 Ok(())
@@ -290,7 +298,8 @@ pub fn process_markdown(
     actions: &[Action],
     ctx: &ActionContext,
 ) -> anyhow::Result<String> {
-    let options = gfm_math_options();
+    let mut options = gfm_math_options();
+    options.parse.broken_link_callback = Some(ctx.refs.broken_link_callback());
     let arena = Arena::new();
     let root = comrak::parse_document(&arena, markdown, &options);
 

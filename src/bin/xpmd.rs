@@ -11,6 +11,7 @@ use clap::Args;
 use clap::Parser;
 use clap::Subcommand;
 use xp_md2html::process::preset::Preset;
+use xp_md2html::process::refs::Refs;
 use xp_md2html::process::relative_url;
 use xp_md2html::process::Action;
 use xp_md2html::process::ActionContext;
@@ -149,6 +150,10 @@ struct ProcessArgs {
     /// Leave drop-front-matter out of the --preset actions
     #[arg(long, requires = "preset")]
     keep_front_matter: bool,
+
+    /// A YAML file of link definitions for the references that the markdown uses without defining, in the form {universal: [{NAME: URL}], PRESET: [{NAME: URL "TITLE"}]}; the universal list always applies, and the list named by --preset with a preset; repeat it for more files. The front matter's refs list, and its platform_refs.PRESET list, apply after the files; a later definition replaces an earlier one, and the markdown's own definition wins
+    #[arg(long = "refs", value_name = "FILE")]
+    ref_files: Vec<PathBuf>,
 
     /// An action to apply, in the given order; one of: table-to-image, download-images, embed-markdown, image-to-asset, table-to-html, mermaid-to-image, graphviz-to-image, code-to-image[=WIDTH], math-to-image[=SERVICE], math-to-img-tag=SERVICE, drop-front-matter, append-reference-list, math-block-to-one-line, math-inline-to-text, codespan-to-text, flatten-lists, rewrite-image-urls=/REGEX/REPL/, rewrite-link-urls=/REGEX/REPL/; SERVICE is one of zhihu, codecogs, upmath, wordpress; any character can stand for the / of /REGEX/REPL/, and REPL writes a group as \1
     #[arg(long = "action", required_unless_present = "preset")]
@@ -557,6 +562,7 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         scale,
         preset,
         keep_front_matter,
+        ref_files,
         actions,
     } = args;
 
@@ -581,6 +587,8 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         .with_context(|| format!("Output path has no file name: {}", output.display()))?
         .to_string();
     let assets_dir = assets.unwrap_or_else(|| output_dir.clone());
+    let platform = preset.map(Preset::name);
+    let refs = Refs::load(&ref_files, &markdown, platform)?;
 
     // A link behind the URL base cannot leave the output file's directory with `..`.
     if url_base.is_some() {
@@ -623,6 +631,7 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         output_dir,
         url_base,
         stem,
+        refs,
         renderer,
     };
 

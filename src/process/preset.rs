@@ -47,6 +47,19 @@ impl FromStr for Preset {
 }
 
 impl Preset {
+    /// The name of the platform, as `--preset` and md2zhihu's `--platform` write it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Zhihu => "zhihu",
+            Self::Github => "github",
+            Self::Wechat => "wechat",
+            Self::Weibo => "weibo",
+            Self::Simple => "simple",
+            Self::MinimalMistake => "minimal_mistake",
+            Self::Transparent => "transparent",
+        }
+    }
+
     /// The actions that give md2zhihu's result for this platform, in order.
     ///
     /// md2zhihu embeds the `.md` images, drops the front matter, copies the local images and lists
@@ -126,6 +139,27 @@ mod tests {
         let expected_error = "unknown preset: medium; \
                               one of: zhihu, github, wechat, weibo, simple, minimal_mistake, transparent";
         assert_eq!(error, Err(expected_error.to_string()));
+    }
+
+    /// `--preset` takes the name of every preset.
+    #[test]
+    fn test_name() {
+        let presets = [
+            Preset::Zhihu,
+            Preset::Github,
+            Preset::Wechat,
+            Preset::Weibo,
+            Preset::Simple,
+            Preset::MinimalMistake,
+            Preset::Transparent,
+        ];
+        let mut names = Vec::new();
+        for preset in presets {
+            let parsed = Preset::from_str(preset.name());
+            assert_eq!(parsed, Ok(preset));
+            names.push(preset.name());
+        }
+        assert_eq!(names.join(", "), PRESET_NAMES);
     }
 
     #[test]

@@ -734,3 +734,46 @@ fn test_process_preset_keep_front_matter() -> Result<()> {
     assert_eq!(markdown, "---\ntitle: T\n---\n\n# Title\n");
     Ok(())
 }
+
+/// `xpmd process --refs FILE --preset zhihu` resolves a reference that the markdown does not
+/// define: from the `universal` list of the file, from the front matter's `refs`, and from its
+/// `platform_refs.zhihu`, which replaces `refs`; the markdown's own definition wins, and the
+/// reference list holds them all.
+#[test]
+fn test_process_refs() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let ref_file = dir.path().join("refs.yaml");
+    fs::write(
+        &ref_file,
+        "universal:\n  - pb: https://pb.com \"protobuf\"\n  - own: https://other.com\n",
+    )?;
+    let input = dir.path().join("post.md");
+    fs::write(
+        &input,
+        "---\nrefs:\n  - grpc: https://grpc.io\nplatform_refs:\n  zhihu:\n    - grpc: https://z.com/grpc\n---\n\n\
+         See [grpc][], [pb][] and [own][].\n\n[own]: https://own.com\n",
+    )?;
+    let output = dir.path().join("out/post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--preset", "zhihu", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("--refs")
+        .arg(&ref_file)
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let expected_markdown = "See [grpc](https://z.com/grpc), [pb](https://pb.com \"protobuf\") \
+                             and [own](https://own.com).\n\n\
+                             Reference:\n\n\
+                             - grpc : <https://z.com/grpc>\n\n\
+                             - own : <https://own.com>\n\n\
+                             - protobuf : <https://pb.com>\n";
+    assert_eq!(markdown, expected_markdown);
+    Ok(())
+}
