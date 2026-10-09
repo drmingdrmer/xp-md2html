@@ -6,6 +6,7 @@ pub mod codespan_to_text;
 pub mod download_images;
 pub mod drop_front_matter;
 pub mod embed_markdown;
+pub mod flatten_lists;
 pub mod graphviz_to_image;
 pub mod image_to_asset;
 pub mod math_block_to_one_line;
@@ -92,6 +93,8 @@ pub enum Action {
     MathInlineToText,
     /// Replace every code span with its text.
     CodespanToText,
+    /// Replace every list and block quote with the blocks it holds.
+    FlattenLists,
 }
 
 impl FromStr for Action {
@@ -144,6 +147,7 @@ impl FromStr for Action {
             ("math-block-to-one-line", None) => Ok(Self::MathBlockToOneLine),
             ("math-inline-to-text", None) => Ok(Self::MathInlineToText),
             ("codespan-to-text", None) => Ok(Self::CodespanToText),
+            ("flatten-lists", None) => Ok(Self::FlattenLists),
             _ => Err(format!("unknown action: {name}")),
         }
     }
@@ -185,6 +189,10 @@ impl Action {
             Self::MathInlineToText => math_inline_to_text::apply(root),
             Self::CodespanToText => {
                 codespan_to_text::apply(root);
+                Ok(())
+            }
+            Self::FlattenLists => {
+                flatten_lists::apply(arena, root);
                 Ok(())
             }
         }
