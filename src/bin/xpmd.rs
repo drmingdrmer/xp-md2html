@@ -10,6 +10,7 @@ use anyhow::Result;
 use clap::Args;
 use clap::Parser;
 use clap::Subcommand;
+use xp_md2html::process::preset::Preset;
 use xp_md2html::process::relative_url;
 use xp_md2html::process::Action;
 use xp_md2html::process::ActionContext;
@@ -125,8 +126,32 @@ struct ProcessArgs {
     #[arg(long, default_value = "2")]
     scale: u32,
 
+    /// Run the actions of an md2zhihu platform before the --action ones; NAME is one of: zhihu, github, wechat, weibo, simple, minimal_mistake, transparent
+    ///
+    /// Every preset runs embed-markdown, drop-front-matter, image-to-asset and append-reference-list, then:
+    ///
+    /// zhihu: math-to-img-tag=zhihu, table-to-html, mermaid-to-image, graphviz-to-image
+    ///
+    /// github: math-block-to-one-line, graphviz-to-image
+    ///
+    /// wechat: math-to-img-tag=zhihu, table-to-html, mermaid-to-image, graphviz-to-image, code-to-image
+    ///
+    /// weibo: table-to-image, math-inline-to-text, math-to-img-tag=zhihu, mermaid-to-image, graphviz-to-image, code-to-image, codespan-to-text, flatten-lists
+    ///
+    /// simple: table-to-image, math-to-image, mermaid-to-image, graphviz-to-image, code-to-image, codespan-to-text
+    ///
+    /// minimal_mistake: mermaid-to-image, graphviz-to-image
+    ///
+    /// transparent: nothing more
+    #[arg(long, value_name = "NAME")]
+    preset: Option<Preset>,
+
+    /// Leave drop-front-matter out of the --preset actions
+    #[arg(long, requires = "preset")]
+    keep_front_matter: bool,
+
     /// An action to apply, in the given order; one of: table-to-image, download-images, embed-markdown, image-to-asset, table-to-html, mermaid-to-image, graphviz-to-image, code-to-image[=WIDTH], math-to-image[=SERVICE], math-to-img-tag=SERVICE, drop-front-matter, append-reference-list, math-block-to-one-line, math-inline-to-text, codespan-to-text, flatten-lists, rewrite-image-urls=/REGEX/REPL/, rewrite-link-urls=/REGEX/REPL/; SERVICE is one of zhihu, codecogs, upmath, wordpress; any character can stand for the / of /REGEX/REPL/, and REPL writes a group as \1
-    #[arg(long = "action", required = true)]
+    #[arg(long = "action", required_unless_present = "preset")]
     actions: Vec<Action>,
 }
 
@@ -530,6 +555,8 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         width,
         height,
         scale,
+        preset,
+        keep_front_matter,
         actions,
     } = args;
 
@@ -599,7 +626,17 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         renderer,
     };
 
-    let processed = xp_md2html::process::process_markdown(&markdown, &actions, &ctx)?;
+    // The preset's actions run first, so an `--action` such as `rewrite-link-urls` sees their links.
+    let mut all_actions = match preset {
+        Some(preset) => preset.actions(),
+        None => Vec::new(),
+    };
+    if keep_front_matter {
+        all_actions.retain(|action| *action != Action::DropFrontMatter);
+    }
+    all_actions.extend(actions);
+
+    let processed = xp_md2html::process::process_markdown(&markdown, &all_actions, &ctx)?;
     fs::write(&output, processed)
         .with_context(|| format!("Failed to write output file: {}", output.display()))?;
 

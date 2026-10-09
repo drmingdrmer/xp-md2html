@@ -674,3 +674,63 @@ fn test_process_url_base_download_images() -> Result<()> {
     assert_eq!(markdown, expected);
     Ok(())
 }
+
+/// `xpmd process --preset github` drops the front matter, copies the image, prints the `$$` formula
+/// in the list item on one line and lists the reference; an `--action` runs after the preset, so
+/// `rewrite-link-urls` rewrites the reference list too.
+#[test]
+fn test_process_preset() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    fs::write(dir.path().join("a.png"), b"PNG-A")?;
+    let input = dir.path().join("post.md");
+    fs::write(
+        &input,
+        "---\ntitle: T\n---\n\n![a](a.png)\n\n- Sum $$\n  a + b\n  $$\n\n\
+         See [the post][p].\n\n[p]: https://old.com/p \"Post\"\n",
+    )?;
+    let output = dir.path().join("out/post.md");
+    let link_rule = "rewrite-link-urls=|^https://old\\.com/|https://new.com/|";
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--preset", "github", "--action", link_rule, "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let expected_markdown = "![a](e793c41f42c3-a.png)\n\n\
+                             - Sum $$a + b$$\n\n\
+                             See [the post](https://new.com/p \"Post\").\n\n\
+                             Reference:\n\n\
+                             - Post : <https://new.com/p>\n";
+    assert_eq!(markdown, expected_markdown);
+    Ok(())
+}
+
+/// `xpmd process --preset transparent --keep-front-matter` keeps the front matter.
+#[test]
+fn test_process_preset_keep_front_matter() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let input = dir.path().join("post.md");
+    fs::write(&input, "---\ntitle: T\n---\n\n# Title\n")?;
+    let output = dir.path().join("out/post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--preset", "transparent", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("--keep-front-matter")
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    assert_eq!(markdown, "---\ntitle: T\n---\n\n# Title\n");
+    Ok(())
+}

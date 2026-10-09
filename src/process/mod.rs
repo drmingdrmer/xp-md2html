@@ -14,6 +14,7 @@ pub mod math_inline_to_text;
 pub mod math_to_image;
 pub mod math_to_img_tag;
 pub mod mermaid_to_image;
+pub mod preset;
 pub mod rewrite_urls;
 pub mod table_to_html;
 pub mod table_to_image;
