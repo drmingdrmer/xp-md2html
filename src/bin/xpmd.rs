@@ -10,6 +10,7 @@ use anyhow::Result;
 use clap::Args;
 use clap::Parser;
 use clap::Subcommand;
+use xp_md2html::process::relative_url;
 use xp_md2html::process::Action;
 use xp_md2html::process::ActionContext;
 use xp_md2html::render::chrome::ChromeRenderer;
@@ -107,6 +108,10 @@ struct ProcessArgs {
     /// Directory for the files the actions create [default: the output file's directory]
     #[arg(long)]
     assets: Option<PathBuf>,
+
+    /// The URL that serves the output file's directory, such as <https://cdn.jsdelivr.net/gh/USER/REPO@BRANCH/DIR>; a file that an action creates is linked as URL/PATH, where PATH is relative to the output file's directory and --assets must be inside it [default: PATH alone]
+    #[arg(long, value_name = "URL")]
+    url_base: Option<String>,
 
     /// Window width for rendering images
     #[arg(short, long, default_value = "1000")]
@@ -521,6 +526,7 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         input,
         output,
         assets,
+        url_base,
         width,
         height,
         scale,
@@ -549,6 +555,19 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         .to_string();
     let assets_dir = assets.unwrap_or_else(|| output_dir.clone());
 
+    // A link behind the URL base cannot leave the output file's directory with `..`.
+    if url_base.is_some() {
+        let assets_path = relative_url(&output_dir, &assets_dir)?;
+        let first_part = assets_path.split('/').next();
+        if first_part == Some("..") {
+            anyhow::bail!(
+                "With --url-base, --assets must be inside the output file's directory {}: {}",
+                output_dir.display(),
+                assets_dir.display()
+            );
+        }
+    }
+
     fs::create_dir_all(&output_dir).with_context(|| {
         format!(
             "Failed to create output directory: {}",
@@ -575,6 +594,7 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         input_dir,
         assets_dir,
         output_dir,
+        url_base,
         stem,
         renderer,
     };

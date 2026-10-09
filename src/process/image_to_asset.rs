@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::Path;
+use std::path::PathBuf;
 
 use anyhow::Context;
 use comrak::nodes::NodeValue;
@@ -18,7 +19,8 @@ const HASH_LEN: usize = 12;
 /// Copy every local image under `root` into `ctx.assets_dir` and link the copy.
 pub fn apply(root: Node<'_>, ctx: &ActionContext) -> anyhow::Result<()> {
     relink_local_images(root, |url| {
-        copy(url, &ctx.input_dir, &ctx.assets_dir, &ctx.output_dir)
+        let path = copy(url, &ctx.input_dir, &ctx.assets_dir)?;
+        ctx.link_to(&path)
     })
 }
 
@@ -46,20 +48,15 @@ fn is_local(url: &str) -> bool {
 }
 
 /// Copy the image at `url`, which resolves against `input_dir`, into `assets_dir` under a name
-/// that hashes its content, and return the copy's URL relative to the output file.
-fn copy(
-    url: &str,
-    input_dir: &Path,
-    assets_dir: &Path,
-    output_dir: &Path,
-) -> anyhow::Result<String> {
+/// that hashes its content, and return the copy's path.
+fn copy(url: &str, input_dir: &Path, assets_dir: &Path) -> anyhow::Result<PathBuf> {
     let source = embed_markdown::resolve(input_dir, input_dir, url);
     let content =
         fs::read(&source).with_context(|| format!("Failed to read image: {}", source.display()))?;
     let path = assets_dir.join(file_name(url, &content));
     fs::write(&path, &content)
         .with_context(|| format!("Failed to write image: {}", path.display()))?;
-    super::relative_url(output_dir, &path)
+    Ok(path)
 }
 
 /// `<sha256(content)[..12]>-<basename>`, where the basename is the last `/` segment of `url`.
@@ -105,24 +102,23 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let input_dir = dir.path().join("posts");
         let assets_dir = dir.path().join("out/assets");
-        let output_dir = dir.path().join("out");
         fs::create_dir_all(input_dir.join("img"))?;
         fs::create_dir_all(&assets_dir)?;
         fs::write(input_dir.join("img/a.png"), b"PNG-A")?;
         fs::write(input_dir.join("r.png"), b"PNG-R")?;
 
-        let url = copy("img/a.png", &input_dir, &assets_dir, &output_dir)?;
-        assert_eq!(url, "assets/e793c41f42c3-a.png");
-        let copied = fs::read(assets_dir.join("e793c41f42c3-a.png"))?;
+        let path = copy("img/a.png", &input_dir, &assets_dir)?;
+        assert_eq!(path, assets_dir.join("e793c41f42c3-a.png"));
+        let copied = fs::read(&path)?;
         assert_eq!(copied, b"PNG-A");
 
         // `/r.png` resolves against the input directory, not the file system root.
-        let url = copy("/r.png", &input_dir, &assets_dir, &output_dir)?;
-        assert_eq!(url, "assets/0ced803886f0-r.png");
-        let copied = fs::read(assets_dir.join("0ced803886f0-r.png"))?;
+        let path = copy("/r.png", &input_dir, &assets_dir)?;
+        assert_eq!(path, assets_dir.join("0ced803886f0-r.png"));
+        let copied = fs::read(&path)?;
         assert_eq!(copied, b"PNG-R");
 
-        let error = copy("img/missing.png", &input_dir, &assets_dir, &output_dir).unwrap_err();
+        let error = copy("img/missing.png", &input_dir, &assets_dir).unwrap_err();
         let expected = format!(
             "Failed to read image: {}",
             input_dir.join("img/missing.png").display()

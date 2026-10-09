@@ -575,3 +575,102 @@ fn test_process_image_to_asset() -> Result<()> {
     assert_eq!(copied, b"PNG-A");
     Ok(())
 }
+
+/// `xpmd process --url-base URL` links the copy as URL plus its path relative to the output file;
+/// a trailing `/` on URL is not doubled.
+#[test]
+fn test_process_url_base() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let input_dir = dir.path().join("posts");
+    fs::create_dir_all(input_dir.join("img"))?;
+    fs::write(input_dir.join("img/a.png"), b"PNG-A")?;
+    let input = input_dir.join("post.md");
+    fs::write(&input, "![a](img/a.png)\n")?;
+    let output = dir.path().join("out/post.md");
+    let assets = dir.path().join("out/assets");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "image-to-asset", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("--assets")
+        .arg(&assets)
+        .args(["--url-base", "https://cdn.com/gh/u/r@b/out/"])
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let expected = "![a](https://cdn.com/gh/u/r@b/out/assets/e793c41f42c3-a.png)\n";
+    assert_eq!(markdown, expected);
+    Ok(())
+}
+
+/// With `--url-base`, an `--assets` outside the output file's directory is an error, and `process`
+/// writes nothing.
+#[test]
+fn test_process_url_base_assets_outside() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let input = dir.path().join("post.md");
+    fs::write(&input, "Text.\n")?;
+    let output_dir = dir.path().join("out");
+    let output = output_dir.join("post.md");
+    let assets = dir.path().join("assets");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "image-to-asset", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("--assets")
+        .arg(&assets)
+        .args(["--url-base", "https://cdn.com/"])
+        // CI sets RUST_BACKTRACE, which would add a backtrace to the error.
+        .env_remove("RUST_BACKTRACE")
+        .env_remove("RUST_LIB_BACKTRACE")
+        .output()?;
+
+    assert_eq!(result.status.code(), Some(1));
+
+    let stderr = String::from_utf8(result.stderr)?;
+    let expected_stderr = format!(
+        "Error: With --url-base, --assets must be inside the output file's directory {}: {}\n",
+        output_dir.display(),
+        assets.display()
+    );
+    assert_eq!(stderr, expected_stderr);
+
+    assert!(!output_dir.exists());
+    Ok(())
+}
+
+/// `download-images` after `image-to-asset` keeps the link under `--url-base`: it links a file that
+/// `image-to-asset` created, which is not online yet.
+#[test]
+fn test_process_url_base_download_images() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    fs::write(dir.path().join("a.png"), b"PNG-A")?;
+    let input = dir.path().join("post.md");
+    fs::write(&input, "![a](a.png)\n")?;
+    let output = dir.path().join("out/post.md");
+
+    // The `.invalid` domain never resolves, so a download from it fails.
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .args(["--url-base", "https://cdn.invalid/out"])
+        .args(["--action", "image-to-asset", "--action", "download-images"])
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let expected = "![a](https://cdn.invalid/out/e793c41f42c3-a.png)\n";
+    assert_eq!(markdown, expected);
+    Ok(())
+}

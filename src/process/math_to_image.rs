@@ -86,7 +86,7 @@ fn formula_of(node: Node<'_>) -> Option<(String, bool)> {
 }
 
 /// Render `tex`, in the display style when `display` is set, to a PNG in `ctx.assets_dir` and
-/// return the PNG's URL relative to the output file.
+/// return the link to the PNG.
 fn render(tex: &str, display: bool, ctx: &ActionContext) -> anyhow::Result<String> {
     let png = ctx.renderer.render_markup(&math_page(tex, display))?;
 
@@ -102,7 +102,7 @@ fn render(tex: &str, display: bool, ctx: &ActionContext) -> anyhow::Result<Strin
     let path = ctx.assets_dir.join(name);
     fs::write(&path, png).with_context(|| format!("Failed to write image: {}", path.display()))?;
 
-    super::relative_url(&ctx.output_dir, &path)
+    ctx.link_to(&path)
 }
 
 #[cfg(test)]

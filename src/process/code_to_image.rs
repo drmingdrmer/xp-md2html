@@ -99,8 +99,8 @@ fn code_of(node: Node<'_>) -> Option<(Option<String>, String)> {
     Some((lang, code.literal.clone()))
 }
 
-/// Render `code` with the colors of `lang` to a PNG in `ctx.assets_dir` and return the PNG's URL
-/// relative to the output file.
+/// Render `code` with the colors of `lang` to a PNG in `ctx.assets_dir` and return the link to the
+/// PNG.
 fn render(
     lang: Option<&str>,
     code: &str,
@@ -121,7 +121,7 @@ fn render(
     let path = ctx.assets_dir.join(name);
     fs::write(&path, png).with_context(|| format!("Failed to write image: {}", path.display()))?;
 
-    super::relative_url(&ctx.output_dir, &path)
+    ctx.link_to(&path)
 }
 
 #[cfg(test)]

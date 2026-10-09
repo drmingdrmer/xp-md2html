@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::Path;
+use std::path::PathBuf;
 
 use anyhow::Context;
 use comrak::nodes::NodeValue;
@@ -17,9 +18,16 @@ const HASH_LEN: usize = 12;
 /// The largest response body a download accepts; `ureq` stops reading at this size.
 const MAX_IMAGE_BYTES: u64 = 100 * 1024 * 1024;
 
-/// Download every `http(s)://` image under `root` into `ctx.assets_dir` and link the copy.
+/// Download every `http(s)://` image under `root` into `ctx.assets_dir` and link the copy; an image
+/// under `ctx.url_base` is a file that an action created, so it keeps its URL.
 pub fn apply(root: Node<'_>, ctx: &ActionContext) -> anyhow::Result<()> {
-    relink_remote_images(root, |url| download(url, &ctx.assets_dir, &ctx.output_dir))
+    relink_remote_images(root, |url| {
+        if ctx.is_under_url_base(url) {
+            return Ok(url.to_string());
+        }
+        let path = download(url, &ctx.assets_dir)?;
+        ctx.link_to(&path)
+    })
 }
 
 /// Replace the URL of every `http(s)://` image under `root` with what `local_url` returns for it.
@@ -44,18 +52,17 @@ fn is_remote(url: &str) -> bool {
     url.starts_with("http://") || url.starts_with("https://")
 }
 
-/// Download `url` into `assets_dir`, unless its file is already there, and return the file's URL
-/// relative to the output file.
+/// Download `url` into `assets_dir`, unless its file is already there, and return the file's path.
 ///
 /// The file name hashes the URL, not the content, so a second run skips the download.
-fn download(url: &str, assets_dir: &Path, output_dir: &Path) -> anyhow::Result<String> {
+fn download(url: &str, assets_dir: &Path) -> anyhow::Result<PathBuf> {
     let path = assets_dir.join(file_name(url));
     if !path.exists() {
         let body = fetch(url)?;
         fs::write(&path, body)
             .with_context(|| format!("Failed to write image: {}", path.display()))?;
     }
-    super::relative_url(output_dir, &path)
+    Ok(path)
 }
 
 /// `<sha256(url)[..12]>-<basename>`, where the basename is the last `/` segment of the URL
@@ -165,14 +172,14 @@ mod tests {
         let url = format!("http://127.0.0.1:{port}/img/a.png?x=1");
         let name = file_name(&url);
 
-        let link = download(&url, &assets_dir, dir.path())?;
-        assert_eq!(link, format!("assets/{name}"));
-        let content = fs::read(assets_dir.join(&name))?;
+        let path = download(&url, &assets_dir)?;
+        assert_eq!(path, assets_dir.join(&name));
+        let content = fs::read(&path)?;
         assert_eq!(content, b"PNGDATA");
 
         // The server is gone, so this call succeeds only if it skips the download.
-        let link = download(&url, &assets_dir, dir.path())?;
-        assert_eq!(link, format!("assets/{name}"));
+        let path = download(&url, &assets_dir)?;
+        assert_eq!(path, assets_dir.join(&name));
         Ok(())
     }
 
@@ -183,7 +190,7 @@ mod tests {
         let port = serve_once("HTTP/1.1 404 Not Found", b"")?;
         let url = format!("http://127.0.0.1:{port}/missing.png");
 
-        let result = download(&url, dir.path(), dir.path());
+        let result = download(&url, dir.path());
         let message = format!("{:#}", result.unwrap_err());
         assert_eq!(
             message,

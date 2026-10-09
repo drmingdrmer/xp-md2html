@@ -65,8 +65,8 @@ fn source_of(node: Node<'_>, lang: &str) -> Option<String> {
     Some(code.literal.clone())
 }
 
-/// Render the diagram `source` with `to_svg` to a PNG in `ctx.assets_dir` and return the PNG's URL
-/// relative to the output file; the PNG is named `<stem>-<lang>-<hash of source>.png`.
+/// Render the diagram `source` with `to_svg` to a PNG in `ctx.assets_dir` and return the link to
+/// the PNG; the PNG is named `<stem>-<lang>-<hash of source>.png`.
 pub(crate) fn render(
     source: &str,
     lang: &str,
@@ -82,7 +82,7 @@ pub(crate) fn render(
     let path = ctx.assets_dir.join(name);
     fs::write(&path, png).with_context(|| format!("Failed to write image: {}", path.display()))?;
 
-    super::relative_url(&ctx.output_dir, &path)
+    ctx.link_to(&path)
 }
 
 #[cfg(test)]

@@ -55,7 +55,7 @@ pub(super) fn is_table(node: Node<'_>) -> bool {
     matches!(node.data().value, NodeValue::Table(_))
 }
 
-/// Render `table` to a PNG in `ctx.assets_dir` and return the PNG's URL relative to the output file.
+/// Render `table` to a PNG in `ctx.assets_dir` and return the link to the PNG.
 fn render(table: Node<'_>, ctx: &ActionContext) -> anyhow::Result<String> {
     let options = html_options();
 
@@ -73,7 +73,7 @@ fn render(table: Node<'_>, ctx: &ActionContext) -> anyhow::Result<String> {
     let path = ctx.assets_dir.join(name);
     fs::write(&path, png).with_context(|| format!("Failed to write image: {}", path.display()))?;
 
-    super::relative_url(&ctx.output_dir, &path)
+    ctx.link_to(&path)
 }
 
 #[cfg(test)]

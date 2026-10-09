@@ -43,10 +43,34 @@ pub struct ActionContext {
     pub assets_dir: PathBuf,
     /// The directory of the output file; a link in the output is relative to it.
     pub output_dir: PathBuf,
+    /// The URL that serves `output_dir`; a link to a file that an action creates starts with it.
+    pub url_base: Option<String>,
     /// The output file's stem; it prefixes the names of the files the actions create.
     pub stem: String,
     /// Renders an HTML page to a PNG.
     pub renderer: ChromeRenderer,
+}
+
+impl ActionContext {
+    /// The link to `file`, which an action created or copied: the path of `file` relative to
+    /// `output_dir`, behind `url_base` and one `/` when there is a URL base.
+    pub fn link_to(&self, file: &Path) -> anyhow::Result<String> {
+        let path = relative_url(&self.output_dir, file)?;
+        let Some(url_base) = &self.url_base else {
+            return Ok(path);
+        };
+        let url_base = url_base.trim_end_matches('/');
+        Ok(format!("{url_base}/{path}"))
+    }
+
+    /// Whether `url` lies under `url_base`, as a link that `link_to` made does.
+    pub fn is_under_url_base(&self, url: &str) -> bool {
+        let Some(url_base) = &self.url_base else {
+            return false;
+        };
+        let prefix = format!("{}/", url_base.trim_end_matches('/'));
+        url.starts_with(&prefix)
+    }
 }
 
 /// One edit of the markdown tree, as `--action` names it.
