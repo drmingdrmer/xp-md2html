@@ -189,10 +189,20 @@ impl ChromeRenderer {
 
     /// Build a `file://` URL for directory `dir`, with the trailing `/` that `<base href>` needs.
     fn dir_file_url(dir: &Path) -> anyhow::Result<String> {
-        let absolute = std::path::absolute(dir)
-            .with_context(|| format!("Failed to make asset base absolute: {}", dir.display()))?;
+        let mut url = Self::file_url(dir)?;
+        if !url.ends_with('/') {
+            url.push('/');
+        }
+        Ok(url)
+    }
+
+    /// Build a `file://` URL for `path`, made absolute, with each byte other than `/` and the
+    /// unreserved characters percent-encoded.
+    pub(crate) fn file_url(path: &Path) -> anyhow::Result<String> {
+        let absolute = std::path::absolute(path)
+            .with_context(|| format!("Failed to make path absolute: {}", path.display()))?;
         let Some(path) = absolute.to_str() else {
-            anyhow::bail!("Asset base is not valid UTF-8: {}", absolute.display());
+            anyhow::bail!("Path is not valid UTF-8: {}", absolute.display());
         };
 
         let mut url = "file://".to_string();
@@ -203,10 +213,6 @@ impl ChromeRenderer {
             } else {
                 url.push_str(&format!("%{:02X}", byte));
             }
-        }
-
-        if !url.ends_with('/') {
-            url.push('/');
         }
         Ok(url)
     }

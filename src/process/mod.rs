@@ -71,11 +71,38 @@ impl ActionContext {
 
     /// Whether `url` lies under `url_base`, as a link that `link_to` made does.
     pub fn is_under_url_base(&self, url: &str) -> bool {
-        let Some(url_base) = &self.url_base else {
-            return false;
-        };
+        self.path_under_url_base(url).is_some()
+    }
+
+    /// The path relative to `output_dir` that `url` names, when `url` lies under `url_base`.
+    fn path_under_url_base<'u>(&self, url: &'u str) -> Option<&'u str> {
+        let url_base = self.url_base.as_ref()?;
         let prefix = format!("{}/", url_base.trim_end_matches('/'));
-        url.starts_with(&prefix)
+        url.strip_prefix(&prefix)
+    }
+
+    /// The local file that the image or link URL `url` in the tree names; None for a URL that names
+    /// no local file, such as `https://x` or `data:x`.
+    ///
+    /// A URL under `url_base`, and a relative URL whose file is in `output_dir`, name a file in
+    /// `output_dir`, as a link that `link_to` made does. A root path `/x`, and any other relative URL,
+    /// name a file in `input_dir`, as a link in the input does.
+    pub(crate) fn local_file(&self, url: &str) -> Option<PathBuf> {
+        if let Some(path) = self.path_under_url_base(url) {
+            return Some(self.output_dir.join(path));
+        }
+        if url.starts_with('/') {
+            let file = embed_markdown::resolve(&self.input_dir, &self.input_dir, url);
+            return Some(file);
+        }
+        if !embed_markdown::is_relative(url) {
+            return None;
+        }
+        let in_output = self.output_dir.join(url);
+        if in_output.exists() {
+            return Some(in_output);
+        }
+        Some(self.input_dir.join(url))
     }
 }
 

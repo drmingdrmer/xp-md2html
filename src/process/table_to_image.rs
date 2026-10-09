@@ -1,6 +1,8 @@
 //! `table-to-image`: render every table to a PNG and link the PNG where the table was.
 
+use std::collections::HashMap;
 use std::fs;
+use std::sync::Arc;
 
 use anyhow::Context;
 use comrak::nodes::NodeValue;
@@ -10,6 +12,7 @@ use sha2::Digest;
 use sha2::Sha256;
 
 use super::ActionContext;
+use crate::render::chrome::ChromeRenderer;
 use crate::render::markdown::html_options;
 
 /// How many hex digits of the table's hash the file name keeps.
@@ -57,10 +60,19 @@ pub(super) fn is_table(node: Node<'_>) -> bool {
 
 /// Render `table` to a PNG in `ctx.assets_dir` and return the link to the PNG.
 fn render(table: Node<'_>, ctx: &ActionContext) -> anyhow::Result<String> {
-    let options = html_options();
+    let mut options = html_options();
 
     let mut markdown = String::new();
     comrak::format_commonmark(table, &options, &mut markdown)?;
+
+    // Chrome loads the page from a temporary directory, where a relative URL names no file, and a
+    // URL under the URL base names a file that is not online yet.
+    let file_urls = file_urls(table, ctx)?;
+    let rewrite = move |url: &str| match file_urls.get(url) {
+        Some(file_url) => file_url.clone(),
+        None => url.to_string(),
+    };
+    options.extension.image_url_rewriter = Some(Arc::new(rewrite));
     let mut html = String::new();
     comrak::format_html(table, &options, &mut html)?;
 
@@ -74,6 +86,23 @@ fn render(table: Node<'_>, ctx: &ActionContext) -> anyhow::Result<String> {
     fs::write(&path, png).with_context(|| format!("Failed to write image: {}", path.display()))?;
 
     ctx.link_to(&path)
+}
+
+/// The `file://` URL of the local file that each image under `table` names, by the image's URL.
+fn file_urls(table: Node<'_>, ctx: &ActionContext) -> anyhow::Result<HashMap<String, String>> {
+    let mut urls = HashMap::new();
+    for node in table.descendants() {
+        let data = node.data();
+        let NodeValue::Image(link) = &data.value else {
+            continue;
+        };
+        let Some(file) = ctx.local_file(&link.url) else {
+            continue;
+        };
+        let file_url = ChromeRenderer::file_url(&file)?;
+        urls.insert(link.url.clone(), file_url);
+    }
+    Ok(urls)
 }
 
 #[cfg(test)]

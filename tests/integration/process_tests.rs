@@ -4,9 +4,18 @@ use std::path::Path;
 use std::process::Command;
 
 use anyhow::Result;
+use image::Rgba;
 
 /// Every PNG file starts with these bytes.
 const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
+
+/// A red image of 40 by 30 pixels.
+const RED_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="30"><rect width="40" height="30" fill="red"/></svg>"#;
+const RED: Rgba<u8> = Rgba([255, 0, 0, 255]);
+
+/// A blue image of 20 by 10 pixels.
+const BLUE_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"><rect width="20" height="10" fill="blue"/></svg>"#;
+const BLUE: Rgba<u8> = Rgba([0, 0, 255, 255]);
 
 /// `xpmd process --action table-to-image` writes the PNG into `--assets` and links it relative to the output file.
 #[test]
@@ -44,6 +53,101 @@ fn test_process_table_to_image() -> Result<()> {
     let magic = image.get(..PNG_MAGIC.len());
     assert_eq!(magic, Some(PNG_MAGIC.as_slice()));
     Ok(())
+}
+
+/// `table-to-image` draws each image of a table from the input's file, also one that a root path
+/// `/x` links: Chrome loads the table's page from a temporary directory, where the image's URL
+/// names no file.
+#[test]
+fn test_process_table_to_image_input_images() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let input_dir = dir.path().join("posts");
+    fs::create_dir_all(input_dir.join("img"))?;
+    fs::write(input_dir.join("img/r.svg"), RED_SVG)?;
+    fs::write(input_dir.join("b.svg"), BLUE_SVG)?;
+    let input = input_dir.join("post.md");
+    let table = "| r | b |\n|---|---|\n| ![r](img/r.svg) | ![b](/b.svg) |\n";
+    fs::write(&input, table)?;
+    let output_dir = dir.path().join("out");
+    let output = output_dir.join("post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "table-to-image", "--scale", "1"])
+        .arg("-i")
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    assert_eq!(markdown, "![](post-table-d295bbb3e858.png)\n");
+
+    // At scale 1, the PNG holds every pixel of each image.
+    let png = output_dir.join("post-table-d295bbb3e858.png");
+    let red = count_pixels(&png, RED)?;
+    assert_eq!(red, 40 * 30);
+    let blue = count_pixels(&png, BLUE)?;
+    assert_eq!(blue, 20 * 10);
+    Ok(())
+}
+
+/// After `image-to-asset`, `table-to-image` draws the copy of the table's image, which the table
+/// links relative to the output file, or under `--url-base` before the copy is online.
+#[test]
+fn test_process_table_to_image_copied_image() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let input_dir = dir.path().join("posts");
+    fs::create_dir_all(&input_dir)?;
+    fs::write(input_dir.join("r.svg"), RED_SVG)?;
+    let input = input_dir.join("post.md");
+    fs::write(&input, "| r |\n|---|\n| ![r](r.svg) |\n")?;
+
+    // The `--url-base` arguments, the start of the link that they give, and the name of the PNG.
+    let cases = [
+        (vec![], "", "post-table-7ab66c2bb4b8.png"),
+        (
+            vec!["--url-base", "https://cdn.invalid/out"],
+            "https://cdn.invalid/out/",
+            "post-table-572a6847bf48.png",
+        ),
+    ];
+    for (url_base_args, link_start, png_name) in cases {
+        let output_dir = tempfile::tempdir()?;
+        let output = output_dir.path().join("post.md");
+
+        let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+            .args(["process", "--scale", "1", "-i"])
+            .arg(&input)
+            .arg("-o")
+            .arg(&output)
+            .args(["--action", "image-to-asset", "--action", "table-to-image"])
+            .args(url_base_args)
+            .output()?;
+
+        let stderr = String::from_utf8(result.stderr)?;
+        assert_eq!(stderr, "");
+
+        let markdown = fs::read_to_string(&output)?;
+        let expected_markdown = format!("![]({link_start}{png_name})\n");
+        assert_eq!(markdown, expected_markdown);
+
+        let png = output_dir.path().join(png_name);
+        let red = count_pixels(&png, RED)?;
+        assert_eq!(red, 40 * 30, "{expected_markdown}");
+    }
+    Ok(())
+}
+
+/// How many pixels of the PNG at `path` have `color`.
+fn count_pixels(path: &Path, color: Rgba<u8>) -> Result<usize> {
+    let image = image::open(path)?;
+    let rgba = image.to_rgba8();
+    let pixels = rgba.pixels();
+    let count = pixels.filter(|pixel| **pixel == color).count();
+    Ok(count)
 }
 
 /// `xpmd process --action mermaid-to-image` writes the diagram's PNG into `--assets`, named by the
