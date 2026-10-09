@@ -371,6 +371,29 @@ fn test_process_math_inline_to_text() -> Result<()> {
     Ok(())
 }
 
+/// `xpmd process --action codespan-to-text` writes each code span as escaped text.
+#[test]
+fn test_process_codespan_to_text() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let input = dir.path().join("post.md");
+    fs::write(&input, "Run `a <b>` now.\n")?;
+    let output = dir.path().join("out/post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "codespan-to-text", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    assert_eq!(markdown, "Run a \\<b\\> now.\n");
+    Ok(())
+}
+
 /// `xpmd process --action table-to-html` writes the table as a bare `<table>` of rows.
 #[test]
 fn test_process_table_to_html() -> Result<()> {

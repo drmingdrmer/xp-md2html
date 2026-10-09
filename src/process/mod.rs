@@ -2,6 +2,7 @@
 
 pub mod append_reference_list;
 pub mod code_to_image;
+pub mod codespan_to_text;
 pub mod download_images;
 pub mod drop_front_matter;
 pub mod embed_markdown;
@@ -89,6 +90,8 @@ pub enum Action {
     MathBlockToOneLine,
     /// Replace every inline formula with Unicode text.
     MathInlineToText,
+    /// Replace every code span with its text.
+    CodespanToText,
 }
 
 impl FromStr for Action {
@@ -140,6 +143,7 @@ impl FromStr for Action {
             ("append-reference-list", None) => Ok(Self::AppendReferenceList),
             ("math-block-to-one-line", None) => Ok(Self::MathBlockToOneLine),
             ("math-inline-to-text", None) => Ok(Self::MathInlineToText),
+            ("codespan-to-text", None) => Ok(Self::CodespanToText),
             _ => Err(format!("unknown action: {name}")),
         }
     }
@@ -179,6 +183,10 @@ impl Action {
                 Ok(())
             }
             Self::MathInlineToText => math_inline_to_text::apply(root),
+            Self::CodespanToText => {
+                codespan_to_text::apply(root);
+                Ok(())
+            }
         }
     }
 }
