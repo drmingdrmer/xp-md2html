@@ -669,6 +669,40 @@ fn test_process_table_to_html() -> Result<()> {
     Ok(())
 }
 
+/// `embed-markdown` embeds a `.md` image by default; `--embed REGEX` replaces that default, so the
+/// `.md` image stays and the image whose URL REGEX matches is embedded.
+#[test]
+fn test_process_embed() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    fs::write(dir.path().join("a.md"), "A\n")?;
+    fs::write(dir.path().join("b.txt"), "B\n")?;
+    let input = dir.path().join("post.md");
+    fs::write(&input, "![](a.md)\n\n![](b.txt)\n")?;
+    let output = dir.path().join("out/post.md");
+
+    // The `--embed` arguments, and the markdown that they give.
+    let cases = [
+        (vec![], "A\n\n![](b.txt)\n"),
+        (vec!["--embed", "[.]txt$"], "![](a.md)\n\nB\n"),
+    ];
+    for (embed_args, expected_markdown) in cases {
+        let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+            .args(["process", "--action", "embed-markdown", "-i"])
+            .arg(&input)
+            .arg("-o")
+            .arg(&output)
+            .args(embed_args)
+            .output()?;
+
+        let stderr = String::from_utf8(result.stderr)?;
+        assert_eq!(stderr, "");
+
+        let markdown = fs::read_to_string(&output)?;
+        assert_eq!(markdown, expected_markdown);
+    }
+    Ok(())
+}
+
 /// `xpmd process --action image-to-asset` copies a local image into `--assets` under a name that
 /// hashes its content, and links the copy relative to the output file.
 #[test]

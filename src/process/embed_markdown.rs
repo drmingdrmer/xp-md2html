@@ -1,4 +1,5 @@
-//! `embed-markdown`: replace a paragraph that holds only `![](x.md)` with the content of `x.md`.
+//! `embed-markdown`: replace a paragraph that holds only an image, such as `![](x.md)`, with the
+//! content of the markdown file at the image's URL.
 
 use std::fs;
 use std::path::Path;
@@ -8,16 +9,24 @@ use anyhow::Context;
 use comrak::nodes::NodeValue;
 use comrak::Arena;
 use comrak::Node;
+use fancy_regex::Regex;
 
 use super::ActionContext;
 
-/// Replace every paragraph under `root` that holds only `![](x.md)` with the content of `x.md`.
+/// The regex of the image URLs that md2zhihu embeds when its `--embed` names none: every URL that
+/// ends with `.md`.
+pub const DEFAULT_PATTERN: &str = "[.]md$";
+
+/// Replace every paragraph under `root` that holds only an image whose URL a regex of
+/// `ctx.embed_patterns` matches with the content of the file at the URL.
 pub fn apply<'a>(arena: &'a Arena<'a>, root: Node<'a>, ctx: &ActionContext) -> anyhow::Result<()> {
-    embed(arena, root, &ctx.input_dir, &ctx.input_dir, &mut Vec::new())
+    let dir = &ctx.input_dir;
+    embed(arena, root, dir, dir, &ctx.embed_patterns, &mut Vec::new())
 }
 
 /// Embed into the tree under `root`, whose file sits in `base_dir`; `/x` resolves against `root_dir`,
-/// the input file's directory.
+/// the input file's directory. A paragraph is embedded when it holds only an image whose URL a regex
+/// of `patterns` matches somewhere.
 ///
 /// `chain` holds the canonical paths of the files being embedded, outermost first, to catch a cycle.
 /// The embedded file's own embeds are resolved first, then its image and link URLs are rebased to
@@ -27,12 +36,13 @@ pub fn embed<'a>(
     root: Node<'a>,
     root_dir: &Path,
     base_dir: &Path,
+    patterns: &[Regex],
     chain: &mut Vec<PathBuf>,
 ) -> anyhow::Result<()> {
     // Edits while walking would confuse the walk, so collect the paragraphs first.
     let mut embeds = Vec::new();
     for node in root.descendants() {
-        if let Some(url) = embedded_url(node) {
+        if let Some(url) = embedded_url(node, patterns)? {
             embeds.push((node, url));
         }
     }
@@ -55,7 +65,7 @@ pub fn embed<'a>(
         let embedded = comrak::parse_document(arena, &text, &options);
 
         chain.push(identity);
-        embed(arena, embedded, root_dir, embedded_dir, chain)?;
+        embed(arena, embedded, root_dir, embedded_dir, patterns, chain)?;
         chain.pop();
         rebase_urls(embedded, embedded_dir, base_dir)?;
 
@@ -72,27 +82,35 @@ pub fn embed<'a>(
     Ok(())
 }
 
-/// The URL of the image when `node` is a paragraph that holds only `![](x.md)`.
-fn embedded_url(node: Node<'_>) -> Option<String> {
+/// The URL of the image when `node` is a paragraph that holds only an image whose URL a regex of
+/// `patterns` matches somewhere.
+fn embedded_url(node: Node<'_>, patterns: &[Regex]) -> anyhow::Result<Option<String>> {
     let is_paragraph = matches!(node.data().value, NodeValue::Paragraph);
     if !is_paragraph {
-        return None;
+        return Ok(None);
     }
 
     let mut children = node.children();
-    let child = children.next()?;
+    let Some(child) = children.next() else {
+        return Ok(None);
+    };
     if children.next().is_some() {
-        return None;
+        return Ok(None);
     }
 
     let data = child.data();
     let NodeValue::Image(link) = &data.value else {
-        return None;
+        return Ok(None);
     };
-    if !link.url.ends_with(".md") {
-        return None;
+    for pattern in patterns {
+        let found = pattern
+            .is_match(&link.url)
+            .with_context(|| format!("Failed to match the regex {pattern}: {}", link.url))?;
+        if found {
+            return Ok(Some(link.url.clone()));
+        }
     }
-    Some(link.url.clone())
+    Ok(None)
 }
 
 /// `/x` is relative to `root_dir`, the input file's directory; any other path is relative to
@@ -175,7 +193,7 @@ mod tests {
         let arena = Arena::new();
         let root = comrak::parse_document(&arena, markdown, &options);
 
-        embed(&arena, root, dir.path(), dir.path(), &mut Vec::new())?;
+        embed_md(&arena, root, dir.path())?;
 
         let mut out = String::new();
         comrak::format_commonmark(root, &options, &mut out)?;
@@ -201,7 +219,7 @@ mod tests {
         let arena = Arena::new();
         let root = comrak::parse_document(&arena, "![](a.md)\n", &options);
 
-        let result = embed(&arena, root, dir.path(), dir.path(), &mut Vec::new());
+        let result = embed_md(&arena, root, dir.path());
         let message = result.unwrap_err().to_string();
         let canonical = fs::canonicalize(dir.path())?;
         let expected = format!(
@@ -219,7 +237,7 @@ mod tests {
         let arena = Arena::new();
         let root = comrak::parse_document(&arena, "![](none.md)\n", &options);
 
-        let result = embed(&arena, root, dir.path(), dir.path(), &mut Vec::new());
+        let result = embed_md(&arena, root, dir.path());
         let message = result.unwrap_err().to_string();
         let expected = format!(
             "Failed to read embedded markdown: {}",
@@ -240,11 +258,39 @@ mod tests {
         let arena = Arena::new();
         let root = comrak::parse_document(&arena, "![](/x.md)\n", &options);
 
-        embed(&arena, root, dir.path(), dir.path(), &mut Vec::new())?;
+        embed_md(&arena, root, dir.path())?;
 
         let mut out = String::new();
         comrak::format_commonmark(root, &options, &mut out)?;
         assert_eq!(out, "X text.\n");
         Ok(())
+    }
+
+    /// An image is embedded when a regex matches somewhere in its URL, also in an embedded file; a
+    /// `.md` image that no regex matches stays.
+    #[test]
+    fn test_embed_patterns() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        fs::write(dir.path().join("a.txt"), "A\n\n![](c.inc)\n")?;
+        fs::write(dir.path().join("c.inc"), "C\n")?;
+
+        let options = super::super::gfm_math_options();
+        let arena = Arena::new();
+        let root = comrak::parse_document(&arena, "![](a.txt)\n\n![](b.md)\n", &options);
+
+        let patterns = [Regex::new("[.]txt$")?, Regex::new("inc")?];
+        let path = dir.path();
+        embed(&arena, root, path, path, &patterns, &mut Vec::new())?;
+
+        let mut out = String::new();
+        comrak::format_commonmark(root, &options, &mut out)?;
+        assert_eq!(out, "A\n\nC\n\n![](b.md)\n");
+        Ok(())
+    }
+
+    /// `embed` into a file in `dir` with md2zhihu's default regex, which embeds every `.md` URL.
+    fn embed_md<'a>(arena: &'a Arena<'a>, root: Node<'a>, dir: &Path) -> anyhow::Result<()> {
+        let patterns = [Regex::new(DEFAULT_PATTERN)?];
+        embed(arena, root, dir, dir, &patterns, &mut Vec::new())
     }
 }

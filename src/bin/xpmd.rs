@@ -10,6 +10,8 @@ use anyhow::Result;
 use clap::Args;
 use clap::Parser;
 use clap::Subcommand;
+use fancy_regex::Regex;
+use xp_md2html::process::embed_markdown;
 use xp_md2html::process::preset::Preset;
 use xp_md2html::process::refs::Refs;
 use xp_md2html::process::relative_url;
@@ -154,6 +156,10 @@ struct ProcessArgs {
     /// A YAML file of link definitions for the references that the markdown uses without defining, in the form {universal: [{NAME: URL}], PRESET: [{NAME: URL "TITLE"}]}; the universal list always applies, and the list named by --preset with a preset; repeat it for more files. The front matter's refs list, and its platform_refs.PRESET list, apply after the files; a later definition replaces an earlier one, and the markdown's own definition wins
     #[arg(long = "refs", value_name = "FILE")]
     ref_files: Vec<PathBuf>,
+
+    /// A regex of the image URLs that embed-markdown embeds: it replaces a paragraph that holds only an image, such as ![](x.md), with the markdown file at the image's URL when REGEX matches somewhere in the URL; repeat it for more regexes; giving it replaces the default, so add --embed '[.]md$' to keep that
+    #[arg(long = "embed", value_name = "REGEX", default_value = embed_markdown::DEFAULT_PATTERN)]
+    embed_patterns: Vec<Regex>,
 
     /// An action to apply, in the given order; one of: table-to-image, download-images, embed-markdown, image-to-asset, table-to-html, mermaid-to-image, graphviz-to-image, code-to-image[=WIDTH], math-to-image[=SERVICE], math-to-img-tag=SERVICE, drop-front-matter, append-reference-list, math-block-to-one-line, math-inline-to-text, codespan-to-text, flatten-lists, rewrite-image-urls=/REGEX/REPL/, rewrite-link-urls=/REGEX/REPL/, join-math-block; SERVICE is one of zhihu, codecogs, upmath, wordpress; any character can stand for the / of /REGEX/REPL/, and REPL writes a group as \1; join-math-block joins a $$ formula that blank lines split, before the parse, wherever it is listed
     #[arg(long = "action", required_unless_present = "preset")]
@@ -563,6 +569,7 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         preset,
         keep_front_matter,
         ref_files,
+        embed_patterns,
         actions,
     } = args;
 
@@ -632,6 +639,7 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         url_base,
         stem,
         refs,
+        embed_patterns,
         renderer,
     };
 

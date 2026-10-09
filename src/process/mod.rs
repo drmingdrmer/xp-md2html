@@ -32,6 +32,7 @@ use comrak::nodes::NodeValue;
 use comrak::Arena;
 use comrak::Node;
 use comrak::Options;
+use fancy_regex::Regex;
 
 use crate::process::refs::Refs;
 use crate::process::rewrite_urls::UrlRewrite;
@@ -53,6 +54,9 @@ pub struct ActionContext {
     pub stem: String,
     /// The link reference definitions for the references that the markdown does not define.
     pub refs: Refs,
+    /// The regexes of the image URLs that `embed-markdown` embeds; an image is embedded when one of
+    /// them matches somewhere in its URL.
+    pub embed_patterns: Vec<Regex>,
     /// Renders an HTML page to a PNG.
     pub renderer: ChromeRenderer,
 }
@@ -113,7 +117,8 @@ pub enum Action {
     TableToImage,
     /// Download every `http(s)://` image into the assets dir and link the copy.
     DownloadImages,
-    /// Replace a paragraph that holds only `![](x.md)` with the content of `x.md`.
+    /// Replace a paragraph that holds only an image, such as `![](x.md)`, with the content of the
+    /// markdown file at the image's URL, when a regex of `ActionContext::embed_patterns` matches it.
     EmbedMarkdown,
     /// Copy every local image into the assets dir and link the copy.
     ImageToAsset,
