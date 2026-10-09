@@ -2059,6 +2059,7 @@ dependencies = [
  "anyhow",
  "clap",
  "comrak",
+ "fancy-regex",
  "image",
  "image-compare",
  "markdown",

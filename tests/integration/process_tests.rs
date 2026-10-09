@@ -417,6 +417,34 @@ fn test_process_flatten_lists() -> Result<()> {
     Ok(())
 }
 
+/// `xpmd process --action rewrite-image-urls=.. --action rewrite-link-urls=..` rewrites the image
+/// and the link URLs, with any delimiter and Python's `\1`.
+#[test]
+fn test_process_rewrite_urls() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let input = dir.path().join("post.md");
+    fs::write(&input, "![a](assets/x.png) [b](posts/y.md)\n")?;
+    let output = dir.path().join("out/post.md");
+    let image_rule = "rewrite-image-urls=|^assets/|https://cdn.com/|";
+    let link_rule = "rewrite-link-urls=#^posts/(.*)\\.md$#https://blog.com/\\1/#";
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .args(["--action", image_rule, "--action", link_rule])
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let expected = "![a](https://cdn.com/x.png) [b](https://blog.com/y/)\n";
+    assert_eq!(markdown, expected);
+    Ok(())
+}
+
 /// `xpmd process --action table-to-html` writes the table as a bare `<table>` of rows.
 #[test]
 fn test_process_table_to_html() -> Result<()> {

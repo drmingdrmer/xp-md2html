@@ -14,6 +14,7 @@ pub mod math_inline_to_text;
 pub mod math_to_image;
 pub mod math_to_img_tag;
 pub mod mermaid_to_image;
+pub mod rewrite_urls;
 pub mod table_to_html;
 pub mod table_to_image;
 
@@ -29,6 +30,7 @@ use comrak::Arena;
 use comrak::Node;
 use comrak::Options;
 
+use crate::process::rewrite_urls::UrlRewrite;
 use crate::render::chrome::ChromeRenderer;
 use crate::render::math_img::MathService;
 use crate::render::math_img::SERVICE_NAMES;
@@ -95,6 +97,16 @@ pub enum Action {
     CodespanToText,
     /// Replace every list and block quote with the blocks it holds.
     FlattenLists,
+    /// Rewrite the URL of every image with a regex.
+    RewriteImageUrls {
+        /// The `/REGEX/REPL/` rule.
+        rule: UrlRewrite,
+    },
+    /// Rewrite the URL of every link with a regex.
+    RewriteLinkUrls {
+        /// The `/REGEX/REPL/` rule.
+        rule: UrlRewrite,
+    },
 }
 
 impl FromStr for Action {
@@ -148,6 +160,21 @@ impl FromStr for Action {
             ("math-inline-to-text", None) => Ok(Self::MathInlineToText),
             ("codespan-to-text", None) => Ok(Self::CodespanToText),
             ("flatten-lists", None) => Ok(Self::FlattenLists),
+            ("rewrite-image-urls", Some(rule)) => {
+                let rule = rule
+                    .parse()
+                    .map_err(|error| format!("invalid action: {name}; {error}"))?;
+                Ok(Self::RewriteImageUrls { rule })
+            }
+            ("rewrite-link-urls", Some(rule)) => {
+                let rule = rule
+                    .parse()
+                    .map_err(|error| format!("invalid action: {name}; {error}"))?;
+                Ok(Self::RewriteLinkUrls { rule })
+            }
+            ("rewrite-image-urls" | "rewrite-link-urls", None) => Err(format!(
+                "invalid action: {name}; {name}=/REGEX/REPL/ takes a rule"
+            )),
             _ => Err(format!("unknown action: {name}")),
         }
     }
@@ -195,6 +222,8 @@ impl Action {
                 flatten_lists::apply(arena, root);
                 Ok(())
             }
+            Self::RewriteImageUrls { rule } => rewrite_urls::apply_to_images(root, rule),
+            Self::RewriteLinkUrls { rule } => rewrite_urls::apply_to_links(root, rule),
         }
     }
 }
@@ -340,6 +369,15 @@ mod tests {
         let expected_bad_service = "invalid action: math-to-img-tag=mathjax; \
                                     unknown math service: mathjax; one of: zhihu, codecogs, upmath, wordpress";
         assert_eq!(bad_service, Err(expected_bad_service.to_string()));
+
+        let link_rewrite = Action::from_str("rewrite-link-urls=|^a/|b/|");
+        let rule = UrlRewrite::from_str("|^a/|b/|").unwrap();
+        assert_eq!(link_rewrite, Ok(Action::RewriteLinkUrls { rule }));
+
+        let no_rule = Action::from_str("rewrite-image-urls");
+        let expected_no_rule =
+            "invalid action: rewrite-image-urls; rewrite-image-urls=/REGEX/REPL/ takes a rule";
+        assert_eq!(no_rule, Err(expected_no_rule.to_string()));
     }
 
     #[test]
