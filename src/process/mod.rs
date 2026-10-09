@@ -272,10 +272,35 @@ pub fn process_markdown(
     for action in actions {
         action.apply(&arena, root, markdown, ctx)?;
     }
+    escape_dollars(&arena, root);
 
     let mut out = String::new();
     comrak::format_commonmark(root, &options, &mut out)?;
     Ok(out)
+}
+
+/// Write each `$` in a text node under `root` as `\$`. comrak prints a text `$` bare, also with
+/// `math_dollars` on, so the text of `\$a\$` would come back as the formula `$a$`.
+fn escape_dollars<'a>(arena: &'a Arena<'a>, root: Node<'a>) {
+    let nodes: Vec<Node<'a>> = root.descendants().collect();
+    for node in nodes {
+        let text = match &node.data().value {
+            NodeValue::Text(text) if text.contains('$') => text.to_string(),
+            _ => continue,
+        };
+        // A raw node prints as it is, while a text node would escape the backslash.
+        for (index, part) in text.split('$').enumerate() {
+            if index > 0 {
+                let dollar = arena.alloc(NodeValue::Raw("\\$".to_string()).into());
+                node.insert_before(dollar);
+            }
+            if !part.is_empty() {
+                let part = arena.alloc(NodeValue::Text(part.to_string().into()).into());
+                node.insert_before(part);
+            }
+        }
+        node.detach();
+    }
 }
 
 /// The path of `target` relative to the directory `base`, with `/` between the parts, for a link in a file under `base`.
@@ -393,6 +418,22 @@ mod tests {
 
         let folded = relative_url(Path::new("/a/b"), Path::new("/a/b/sub/.././x.png"))?;
         assert_eq!(folded, "x.png");
+        Ok(())
+    }
+
+    /// An escaped `\$` stays escaped, also at the start or in a link, and a formula stays.
+    #[test]
+    fn test_escape_dollars() -> anyhow::Result<()> {
+        let markdown = "\\$5 and \\$a\\$ in [\\$b](u), $c$\n";
+        let arena = Arena::new();
+        let options = gfm_math_options();
+        let root = comrak::parse_document(&arena, markdown, &options);
+
+        escape_dollars(&arena, root);
+
+        let mut out = String::new();
+        comrak::format_commonmark(root, &options, &mut out)?;
+        assert_eq!(out, markdown);
         Ok(())
     }
 }

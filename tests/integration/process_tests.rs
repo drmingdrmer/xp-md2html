@@ -394,6 +394,30 @@ fn test_process_codespan_to_text() -> Result<()> {
     Ok(())
 }
 
+/// `xpmd process` keeps an escaped `\$` escaped, and escapes the `$` of a code span that
+/// `codespan-to-text` turns into text, so neither becomes a formula.
+#[test]
+fn test_process_escaped_dollar() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let input = dir.path().join("post.md");
+    fs::write(&input, "Price \\$a\\$ and `$x$`.\n")?;
+    let output = dir.path().join("out/post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "codespan-to-text", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    assert_eq!(markdown, "Price \\$a\\$ and \\$x\\$.\n");
+    Ok(())
+}
+
 /// `xpmd process --action flatten-lists` writes each list item and quote as a plain paragraph.
 #[test]
 fn test_process_flatten_lists() -> Result<()> {
