@@ -8,6 +8,7 @@ pub mod embed_markdown;
 pub mod graphviz_to_image;
 pub mod image_to_asset;
 pub mod math_block_to_one_line;
+pub mod math_inline_to_text;
 pub mod math_to_image;
 pub mod math_to_img_tag;
 pub mod mermaid_to_image;
@@ -86,6 +87,8 @@ pub enum Action {
     AppendReferenceList,
     /// Print every `$$` formula in a list item on one line.
     MathBlockToOneLine,
+    /// Replace every inline formula with Unicode text.
+    MathInlineToText,
 }
 
 impl FromStr for Action {
@@ -136,6 +139,7 @@ impl FromStr for Action {
             ("drop-front-matter", None) => Ok(Self::DropFrontMatter),
             ("append-reference-list", None) => Ok(Self::AppendReferenceList),
             ("math-block-to-one-line", None) => Ok(Self::MathBlockToOneLine),
+            ("math-inline-to-text", None) => Ok(Self::MathInlineToText),
             _ => Err(format!("unknown action: {name}")),
         }
     }
@@ -174,6 +178,7 @@ impl Action {
                 math_block_to_one_line::apply(root);
                 Ok(())
             }
+            Self::MathInlineToText => math_inline_to_text::apply(root),
         }
     }
 }
