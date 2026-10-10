@@ -47,20 +47,20 @@ pub fn math_url(service: MathService, tex: &str, display: bool) -> String {
 }
 
 /// The `<img>` tag whose image `service` draws from `tex`, in the display style when `display` is
-/// set; the `alt` holds the TeX.
+/// set; the `alt` holds the TeX, HTML-escaped.
 ///
-/// The zhihu tag is k3down2's `tex_to_zhihu`: `class="ee_img tr_noresize" eeimg="1"` makes zhihu's
-/// editor take it as an equation, and the `alt` is not HTML-escaped beyond the `>` that
-/// `zhihu_compatible` writes as `\gt`.
+/// The zhihu tag is k3down2's `tex_to_zhihu`, whose `class="ee_img tr_noresize" eeimg="1"` makes
+/// zhihu's editor take it as an equation. k3down2 leaves the `alt` unescaped, so a `"` in the TeX
+/// would end it.
 pub fn math_img_tag(service: MathService, tex: &str, display: bool) -> String {
     let tex = service_tex(service, tex, display);
     let url = url_of(service, &tex);
+    let alt = escape_text(&tex).replace('"', "&quot;");
     if service == MathService::Zhihu {
         return format!(
-            "<img src=\"{url}\" alt=\"{tex}\" class=\"ee_img tr_noresize\" eeimg=\"1\">"
+            "<img src=\"{url}\" alt=\"{alt}\" class=\"ee_img tr_noresize\" eeimg=\"1\">"
         );
     }
-    let alt = escape_text(&tex).replace('"', "&quot;");
     format!("<img src=\"{url}\" alt=\"{alt}\">")
 }
 
@@ -181,13 +181,17 @@ mod tests {
         assert_eq!(tag, expected_tag);
     }
 
-    /// The zhihu tag is k3down2's, except that a newline inside the TeX becomes a space and a space
-    /// separates `\gt` from a letter.
+    /// The zhihu tag is k3down2's, except that a newline inside the TeX becomes a space, a space
+    /// separates `\gt` from a letter, and the `alt` is HTML-escaped.
     #[test]
     fn test_zhihu_tag() {
         let k3down2_tag = math_img_tag(MathService::Zhihu, "x>1, \\>, a_b~/.-", false);
-        let expected_k3down2_tag = r#"<img src="https://www.zhihu.com/equation?tex=x%5Cgt1%2C%20%5C%3E%2C%20a_b~/.-" alt="x\gt1, \>, a_b~/.-" class="ee_img tr_noresize" eeimg="1">"#;
+        let expected_k3down2_tag = r#"<img src="https://www.zhihu.com/equation?tex=x%5Cgt1%2C%20%5C%3E%2C%20a_b~/.-" alt="x\gt1, \&gt;, a_b~/.-" class="ee_img tr_noresize" eeimg="1">"#;
         assert_eq!(k3down2_tag, expected_k3down2_tag);
+
+        let quoted_tag = math_img_tag(MathService::Zhihu, "\\text{\"a\"} & b<c", false);
+        let expected_quoted_tag = r#"<img src="https://www.zhihu.com/equation?tex=%5Ctext%7B%22a%22%7D%20%26%20b%3Cc" alt="\text{&quot;a&quot;} &amp; b&lt;c" class="ee_img tr_noresize" eeimg="1">"#;
+        assert_eq!(quoted_tag, expected_quoted_tag);
 
         let display_tag = math_img_tag(MathService::Zhihu, "\n\\text{中}\n= y\n", true);
         let expected_display_tag = r#"<img src="https://www.zhihu.com/equation?tex=%5Ctext%7B%E4%B8%AD%7D%20%3D%20y%5C%5C" alt="\text{中} = y\\" class="ee_img tr_noresize" eeimg="1">"#;
