@@ -1,9 +1,17 @@
 use std::fs;
+use std::io;
+use std::io::Read;
 use std::io::Write;
 use std::path::Path;
 use std::process::Command;
+use std::process::Output;
 use std::process::Stdio;
+use std::thread;
+use std::thread::JoinHandle;
+use std::time::Duration;
+use std::time::Instant;
 
+use anyhow::Context;
 use anyhow::Result;
 
 use super::process_tests::count_pixels;
@@ -19,6 +27,12 @@ const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
 /// Every PDF file starts with these bytes.
 const PDF_MAGIC: &[u8] = b"%PDF-";
 
+/// How long a test waits for one run of `xpmd`, which starts Chrome a few times at most.
+const RUN_TIMEOUT: Duration = Duration::from_secs(120);
+
+/// How often a test checks whether a run has exited.
+const POLL_INTERVAL: Duration = Duration::from_millis(10);
+
 /// `xpmd render-markup -o` prints nothing: `ChromeRenderer` prints nothing, and Chrome's noise is captured.
 #[test]
 fn test_render_prints_nothing() -> Result<()> {
@@ -32,7 +46,7 @@ fn test_render_prints_nothing() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -58,7 +72,7 @@ fn test_render_takes_format_from_output_extension() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -90,7 +104,7 @@ fn test_render_scale() -> Result<()> {
             .arg("-o")
             .arg(&output)
             .args(scale_args)
-            .output()?;
+            .output_ok()?;
 
         let stderr = String::from_utf8(result.stderr)?;
         assert_eq!(stderr, "");
@@ -106,16 +120,9 @@ fn test_render_scale() -> Result<()> {
 /// Without `-i` and `-o`, `render-markup` reads HTML from stdin and writes the image to stdout.
 #[test]
 fn test_render_stdin_to_stdout() -> Result<()> {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
         .args(["render-markup", "-f", "jpg"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    let mut stdin = child.stdin.take().unwrap();
-    stdin.write_all(b"<html><body><h1>From stdin</h1></body></html>")?;
-    drop(stdin);
-    let result = child.wait_with_output()?;
+        .output_ok_with_stdin(b"<html><body><h1>From stdin</h1></body></html>")?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -145,7 +152,7 @@ fn test_render_without_imagemagick() -> Result<()> {
         .arg("-o")
         .arg(&pdf)
         .env("PATH", &empty_path)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -161,7 +168,7 @@ fn test_render_without_imagemagick() -> Result<()> {
         .arg("-o")
         .arg(&svg)
         .env("PATH", &empty_path)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -189,7 +196,7 @@ fn test_render_png_without_imagemagick() -> Result<()> {
         .arg("-o")
         .arg(dir.path().join("simple.png"))
         .env("PATH", &empty_path)
-        .output()?;
+        .output_bounded()?;
 
     let succeeded = result.status.success();
     assert!(!succeeded);
@@ -201,4 +208,159 @@ fn test_render_png_without_imagemagick() -> Result<()> {
                                and accessible; an SVG or a PDF does not need it.";
     assert_eq!(first_line, Some(expected_first_line));
     Ok(())
+}
+
+/// A failed run is an error that names the command, with its exit status and its stderr.
+#[test]
+fn test_output_ok_fails() -> Result<()> {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_xpmd"));
+    command
+        .args(["process", "-i", "/nonexistent/post.md"])
+        // CI sets RUST_BACKTRACE, which would add a backtrace to the error.
+        .env_remove("RUST_BACKTRACE")
+        .env_remove("RUST_LIB_BACKTRACE");
+
+    let result = command.output_ok();
+
+    let message = result.unwrap_err().to_string();
+    let expected = format!(
+        "{command:?} failed with exit status: 1; stderr:\n\
+         Error: Failed to read input file: /nonexistent/post.md\n\n\
+         Caused by:\n    No such file or directory (os error 2)\n"
+    );
+    assert_eq!(message, expected);
+    Ok(())
+}
+
+/// A run that takes longer than its time is killed, and the error names the command.
+#[test]
+fn test_run_bounded_kills() -> Result<()> {
+    let mut command = Command::new("sleep");
+    command.arg("10");
+    let timeout = Duration::from_millis(100);
+    let start = Instant::now();
+
+    let result = run_bounded(&mut command, None, timeout);
+
+    let elapsed = start.elapsed();
+    assert!(elapsed < RUN_TIMEOUT, "{elapsed:?}");
+    let message = result.unwrap_err().to_string();
+    assert_eq!(message, "\"sleep\" \"10\" ran longer than 100ms; stderr:\n");
+    Ok(())
+}
+
+/// Runs a command for a test, which waits for it at most [`RUN_TIMEOUT`].
+pub(crate) trait BoundedOutput {
+    /// The output of the command, which reads no stdin, whatever its exit status.
+    fn output_bounded(&mut self) -> Result<Output>;
+
+    /// The output of the command, which reads no stdin; an error with the exit status and the
+    /// stderr when the command fails.
+    fn output_ok(&mut self) -> Result<Output>;
+
+    /// [`BoundedOutput::output_ok`] with `stdin` as the input of the command.
+    fn output_ok_with_stdin(&mut self, stdin: &[u8]) -> Result<Output>;
+}
+
+impl BoundedOutput for Command {
+    fn output_bounded(&mut self) -> Result<Output> {
+        run_bounded(self, None, RUN_TIMEOUT)
+    }
+
+    fn output_ok(&mut self) -> Result<Output> {
+        let output = run_bounded(self, None, RUN_TIMEOUT)?;
+        succeeded(self, output)
+    }
+
+    fn output_ok_with_stdin(&mut self, stdin: &[u8]) -> Result<Output> {
+        let output = run_bounded(self, Some(stdin), RUN_TIMEOUT)?;
+        succeeded(self, output)
+    }
+}
+
+/// The output of `command` with `stdin` as its input, or none, once it exits, whatever its exit
+/// status; an error with its stderr when it runs longer than `timeout`, after it is killed.
+fn run_bounded(command: &mut Command, stdin: Option<&[u8]>, timeout: Duration) -> Result<Output> {
+    let input = if stdin.is_some() {
+        Stdio::piped()
+    } else {
+        Stdio::null()
+    };
+    command
+        .stdin(input)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn()?;
+
+    // The pipes are read while the command runs: a full pipe would stop it.
+    let stdout = child
+        .stdout
+        .take()
+        .context("The stdout of the command is not piped")?;
+    let stderr = child
+        .stderr
+        .take()
+        .context("The stderr of the command is not piped")?;
+    let stdout_reader = thread::spawn(move || read_all(stdout));
+    let stderr_reader = thread::spawn(move || read_all(stderr));
+
+    if let Some(data) = stdin {
+        let mut pipe = child
+            .stdin
+            .take()
+            .context("The stdin of the command is not piped")?;
+        pipe.write_all(data)?;
+        // Dropping the pipe closes it, so the command reads to its end.
+    }
+
+    let deadline = Instant::now() + timeout;
+    let mut status = child.try_wait()?;
+    while status.is_none() && Instant::now() < deadline {
+        thread::sleep(POLL_INTERVAL);
+        status = child.try_wait()?;
+    }
+    if status.is_none() {
+        child.kill()?;
+        child.wait()?;
+    }
+
+    let stdout = join(stdout_reader)?;
+    let stderr = join(stderr_reader)?;
+    let Some(status) = status else {
+        let stderr = String::from_utf8_lossy(&stderr);
+        anyhow::bail!("{command:?} ran longer than {timeout:?}; stderr:\n{stderr}");
+    };
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+/// `output` of `command`, or an error with the exit status and the stderr when the command failed.
+fn succeeded(command: &Command, output: Output) -> Result<Output> {
+    if output.status.success() {
+        return Ok(output);
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    anyhow::bail!(
+        "{command:?} failed with {}; stderr:\n{stderr}",
+        output.status
+    );
+}
+
+/// The bytes of `pipe` until the command closes it.
+fn read_all(mut pipe: impl Read) -> io::Result<Vec<u8>> {
+    let mut data = Vec::new();
+    pipe.read_to_end(&mut data)?;
+    Ok(data)
+}
+
+/// The bytes that `reader`, a thread of [`read_all`], read.
+fn join(reader: JoinHandle<io::Result<Vec<u8>>>) -> Result<Vec<u8>> {
+    let Ok(read) = reader.join() else {
+        anyhow::bail!("The thread that reads a pipe of the command panicked");
+    };
+    let data = read?;
+    Ok(data)
 }

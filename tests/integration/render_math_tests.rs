@@ -7,6 +7,7 @@ use anyhow::Result;
 use super::process_tests::count_pixels;
 use super::process_tests::BLUE;
 use super::process_tests::RED;
+use super::xpmd_tests::BoundedOutput;
 
 /// Every PNG file starts with these bytes.
 const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
@@ -20,7 +21,7 @@ fn test_render_math_svg_and_png() -> Result<()> {
     let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
         .args(["render-math", "-i"])
         .arg(&input)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -46,7 +47,7 @@ fn test_render_math_svg_and_png() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -82,7 +83,7 @@ fn test_render_math_wide_and_tall() -> Result<()> {
             .arg(&input)
             .arg("-o")
             .arg(&output)
-            .output()?;
+            .output_ok()?;
 
         let stderr = String::from_utf8(result.stderr)?;
         assert_eq!(stderr, "");

@@ -1,10 +1,10 @@
 use std::fs;
-use std::io::Write;
 use std::path::Path;
 use std::process::Command;
-use std::process::Stdio;
 
 use anyhow::Result;
+
+use super::xpmd_tests::BoundedOutput;
 
 /// `xpmd render-markdown` prints a page in GitHub's style; `--bare` prints only the content's HTML.
 #[test]
@@ -15,7 +15,7 @@ fn test_render_markdown_page_and_bare() -> Result<()> {
     let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
         .args(["render-markdown", "-i"])
         .arg(&input)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -39,7 +39,7 @@ fn test_render_markdown_page_and_bare() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -63,16 +63,9 @@ fn test_render_markdown_page_and_bare() -> Result<()> {
 /// Without `-i`, `render-markdown` reads the markdown from stdin.
 #[test]
 fn test_render_markdown_reads_stdin() -> Result<()> {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
         .args(["render-markdown", "--bare"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    let mut stdin = child.stdin.take().unwrap();
-    stdin.write_all(b"a <br> b\n")?;
-    drop(stdin);
-    let result = child.wait_with_output()?;
+        .output_ok_with_stdin(b"a <br> b\n")?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");

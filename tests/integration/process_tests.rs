@@ -6,7 +6,6 @@ use std::io::Write;
 use std::net::TcpListener;
 use std::path::Path;
 use std::process::Command;
-use std::process::Stdio;
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -16,6 +15,8 @@ use anyhow::Result;
 use image::Rgba;
 use sha2::Digest;
 use sha2::Sha256;
+
+use super::xpmd_tests::BoundedOutput;
 
 /// Every PNG file starts with these bytes.
 const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
@@ -47,7 +48,7 @@ fn test_process_table_to_image() -> Result<()> {
         .arg(&output)
         .arg("--assets")
         .arg(&assets)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -91,7 +92,7 @@ fn test_process_table_to_image_input_images() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -139,7 +140,7 @@ fn test_process_table_to_image_copied_image() -> Result<()> {
             .arg(&output)
             .args(["--action", "image-to-asset", "--action", "table-to-image"])
             .args(url_base_args)
-            .output()?;
+            .output_ok()?;
 
         let stderr = String::from_utf8(result.stderr)?;
         assert_eq!(stderr, "");
@@ -176,7 +177,7 @@ fn test_process_table_to_image_output_collision() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -210,7 +211,7 @@ fn test_process_table_to_image_url_escapes() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -252,7 +253,7 @@ fn test_process_mermaid_to_image() -> Result<()> {
         .arg(&output)
         .arg("--assets")
         .arg(&assets)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -286,7 +287,7 @@ fn test_process_graphviz_to_image() -> Result<()> {
         .arg(&output)
         .arg("--assets")
         .arg(&assets)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -327,7 +328,7 @@ fn test_process_code_to_image() -> Result<()> {
         .arg(&output)
         .arg("--assets")
         .arg(&assets)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -367,7 +368,7 @@ fn test_process_code_to_image_too_wide() -> Result<()> {
         // CI sets RUST_BACKTRACE, which would add a backtrace to the error.
         .env_remove("RUST_BACKTRACE")
         .env_remove("RUST_LIB_BACKTRACE")
-        .output()?;
+        .output_bounded()?;
 
     assert_eq!(result.status.code(), Some(1));
 
@@ -396,7 +397,7 @@ fn test_process_math_to_image() -> Result<()> {
         .arg(&output)
         .arg("--assets")
         .arg(&assets)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -438,7 +439,7 @@ fn test_process_math_to_image_wide() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -471,7 +472,7 @@ fn test_process_math_to_image_service() -> Result<()> {
         .arg(&output)
         .arg("--assets")
         .arg(&assets)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -507,7 +508,7 @@ fn test_process_math_to_img_tag() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -540,7 +541,7 @@ fn test_process_drop_front_matter() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -566,7 +567,7 @@ fn test_process_append_reference_list() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -600,7 +601,7 @@ fn test_process_rewrite_reference_list() -> Result<()> {
             .arg("-o")
             .arg(&output)
             .args(["--action", first, "--action", second])
-            .output()?;
+            .output_ok()?;
 
         let stderr = String::from_utf8(result.stderr)?;
         assert_eq!(stderr, "");
@@ -627,7 +628,7 @@ fn test_process_math_block_to_one_line() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -652,7 +653,7 @@ fn test_process_join_math_block() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -682,7 +683,7 @@ fn test_process_embed_join_math_block() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -706,7 +707,7 @@ fn test_process_math_inline_to_text() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -729,7 +730,7 @@ fn test_process_codespan_to_text() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -753,7 +754,7 @@ fn test_process_escaped_dollar() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -776,7 +777,7 @@ fn test_process_flatten_lists() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -803,7 +804,7 @@ fn test_process_rewrite_urls() -> Result<()> {
         .arg("-o")
         .arg(&output)
         .args(["--action", image_rule, "--action", link_rule])
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -827,7 +828,7 @@ fn test_process_table_to_html() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -880,7 +881,7 @@ fn test_process_embed() -> Result<()> {
             .arg("-o")
             .arg(&output)
             .args(embed_args)
-            .output()?;
+            .output_ok()?;
 
         let stderr = String::from_utf8(result.stderr)?;
         assert_eq!(stderr, "");
@@ -911,7 +912,7 @@ fn test_process_image_to_asset() -> Result<()> {
         .arg(&output)
         .arg("--assets")
         .arg(&assets)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -964,7 +965,7 @@ fn test_process_image_to_asset_keeps_assets() -> Result<()> {
             .arg(&input)
             .arg("-o")
             .arg(&output)
-            .output()?;
+            .output_ok()?;
 
         let stderr = String::from_utf8(result.stderr)?;
         assert_eq!(stderr, "");
@@ -1009,7 +1010,7 @@ fn test_process_image_to_asset_url_escapes() -> Result<()> {
         .arg("--assets")
         .arg(&assets)
         .args(["--url-base", "https://cdn.invalid/out"])
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -1062,7 +1063,7 @@ fn test_process_url_base() -> Result<()> {
         .arg("--assets")
         .arg(&assets)
         .args(["--url-base", "https://cdn.com/gh/u/r@b/out/"])
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -1095,7 +1096,7 @@ fn test_process_url_base_assets_outside() -> Result<()> {
         // CI sets RUST_BACKTRACE, which would add a backtrace to the error.
         .env_remove("RUST_BACKTRACE")
         .env_remove("RUST_LIB_BACKTRACE")
-        .output()?;
+        .output_bounded()?;
 
     assert_eq!(result.status.code(), Some(1));
 
@@ -1129,7 +1130,7 @@ fn test_process_url_base_download_images() -> Result<()> {
         .arg(&output)
         .args(["--url-base", "https://cdn.invalid/out"])
         .args(["--action", "image-to-asset", "--action", "download-images"])
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -1160,7 +1161,7 @@ fn test_process_download_images_under_url_base() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -1249,7 +1250,7 @@ fn test_process_preset() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -1278,7 +1279,7 @@ fn test_process_preset_keep_front_matter() -> Result<()> {
         .arg("-o")
         .arg(&output)
         .arg("--keep-front-matter")
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -1315,7 +1316,7 @@ fn test_process_refs() -> Result<()> {
         .arg(&output)
         .arg("--refs")
         .arg(&ref_file)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -1366,7 +1367,7 @@ fn test_process_embed_refs() -> Result<()> {
         .arg(&output)
         .arg("--refs")
         .arg(&ref_file)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -1405,7 +1406,7 @@ fn test_process_embed_reference_list() -> Result<()> {
         .arg(&output)
         .arg("--refs")
         .arg(&ref_file)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -1459,7 +1460,7 @@ fn test_process_embed_nested() -> Result<()> {
         .arg(&output)
         .arg("--refs")
         .arg(&ref_file)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -1489,16 +1490,9 @@ fn test_process_embed_nested() -> Result<()> {
 /// parsed and printed again, to stdout.
 #[test]
 fn test_process_stdin_to_stdout() -> Result<()> {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
         .arg("process")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    let mut stdin = child.stdin.take().unwrap();
-    stdin.write_all(b"_a_\n")?;
-    drop(stdin);
-    let result = child.wait_with_output()?;
+        .output_ok_with_stdin(b"_a_\n")?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -1516,18 +1510,11 @@ fn test_process_stdin_to_stdout_files() -> Result<()> {
     fs::create_dir_all(dir.path().join("img"))?;
     fs::write(dir.path().join("img/a.png"), b"PNG-A")?;
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
         .args(["process", "--action", "image-to-asset"])
         .args(["--action", "table-to-image"])
         .current_dir(dir.path())
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    let mut stdin = child.stdin.take().unwrap();
-    stdin.write_all(b"![a](img/a.png)\n\n| x |\n|---|\n| 1 |\n")?;
-    drop(stdin);
-    let result = child.wait_with_output()?;
+        .output_ok_with_stdin(b"![a](img/a.png)\n\n| x |\n|---|\n| 1 |\n")?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -1557,7 +1544,7 @@ fn test_process_file_to_stdout() -> Result<()> {
         .args(["process", "--action", "table-to-image", "-i"])
         .arg(&input)
         .current_dir(dir.path())
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -1600,7 +1587,7 @@ fn test_process_without_renderer() -> Result<()> {
             .arg(&output)
             .args(action_args)
             .env("PATH", &empty_path)
-            .output()?;
+            .output_ok()?;
 
         let stderr = String::from_utf8(result.stderr)?;
         assert_eq!(stderr, "");
@@ -1629,7 +1616,7 @@ fn test_process_renderer_missing() -> Result<()> {
         .arg("-o")
         .arg(&output)
         .env("PATH", &empty_path)
-        .output()?;
+        .output_bounded()?;
 
     let succeeded = result.status.success();
     assert!(!succeeded);

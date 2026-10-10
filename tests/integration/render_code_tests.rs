@@ -1,10 +1,10 @@
 use std::fs;
-use std::io::Write;
 use std::path::Path;
 use std::process::Command;
-use std::process::Stdio;
 
 use anyhow::Result;
+
+use super::xpmd_tests::BoundedOutput;
 
 /// `xpmd render-code` prints the page to stdout and nothing else; `-o` writes the same bytes to a file.
 #[test]
@@ -15,7 +15,7 @@ fn test_render_code_to_stdout_and_file() -> Result<()> {
     let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
         .args(["render-code", "-l", "rust", "-i"])
         .arg(&input)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -36,7 +36,7 @@ fn test_render_code_to_stdout_and_file() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -52,16 +52,9 @@ fn test_render_code_to_stdout_and_file() -> Result<()> {
 /// Without `-i`, `render-code` reads the code from stdin.
 #[test]
 fn test_render_code_reads_stdin() -> Result<()> {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
         .args(["render-code", "-l", "rust"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    let mut stdin = child.stdin.take().unwrap();
-    stdin.write_all(b"fn main() {}\n")?;
-    drop(stdin);
-    let result = child.wait_with_output()?;
+        .output_ok_with_stdin(b"fn main() {}\n")?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");

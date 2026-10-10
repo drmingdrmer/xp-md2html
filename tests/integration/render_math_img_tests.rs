@@ -1,24 +1,17 @@
 use std::fs;
-use std::io::Write;
 use std::process::Command;
-use std::process::Stdio;
 
 use anyhow::Result;
+
+use super::xpmd_tests::BoundedOutput;
 
 /// Without `-i`, `xpmd render-math-img` reads the TeX from stdin and prints the service's `<img>`
 /// tag; `--inline` leaves out the `\displaystyle` that a display formula gets.
 #[test]
 fn test_render_math_img_reads_stdin() -> Result<()> {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
         .args(["render-math-img", "--service", "codecogs", "--inline"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    let mut stdin = child.stdin.take().unwrap();
-    stdin.write_all(b"a<b\n")?;
-    drop(stdin);
-    let result = child.wait_with_output()?;
+        .output_ok_with_stdin(b"a<b\n")?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -46,7 +39,7 @@ fn test_render_math_img_files() -> Result<()> {
         .arg(&input)
         .arg("-o")
         .arg(&output)
-        .output()?;
+        .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
