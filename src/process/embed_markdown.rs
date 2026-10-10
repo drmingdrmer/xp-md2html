@@ -22,51 +22,58 @@ pub const DEFAULT_PATTERN: &str = "[.]md$";
 /// `ctx.embed_patterns` matches with the content of the file at the URL.
 pub fn apply<'a>(loader: &Loader<'a>, root: Node<'a>, ctx: &ActionContext) -> anyhow::Result<()> {
     let dir = &ctx.input_dir;
-    embed(
+    let mut embed_ctx = EmbedContext {
         loader,
-        root,
-        dir,
-        dir,
-        &ctx.embed_patterns,
-        &ctx.refs,
-        &mut Vec::new(),
-    )
+        root_dir: dir,
+        patterns: &ctx.embed_patterns,
+        chain: Vec::new(),
+    };
+    embed(&mut embed_ctx, root, dir, &ctx.refs)
 }
 
-/// Embed into the tree under `root`, whose file sits in `base_dir`; `/x` resolves against `root_dir`,
-/// the input file's directory. A paragraph is embedded when it holds only an image whose URL a regex
-/// of `patterns` matches somewhere.
+/// What [`embed`] shares across the input file and every file that it embeds.
+struct EmbedContext<'c, 'a> {
+    /// Parses each embedded file into the arena of the input's tree.
+    loader: &'c Loader<'a>,
+    /// The input file's directory; `/x` resolves against it.
+    root_dir: &'c Path,
+    /// A paragraph is embedded when it holds only an image whose URL one of these regexes matches
+    /// somewhere.
+    patterns: &'c [Regex],
+    /// The canonical paths of the files being embedded, outermost first, to catch a cycle.
+    chain: Vec<PathBuf>,
+}
+
+/// Embed into the tree under `root`, whose file sits in `base_dir`, each paragraph that
+/// `ctx.patterns` picks.
 ///
 /// `refs` resolves a reference that the file under `root` does not define; an embedded file's front
 /// matter adds to it for that file, as [`Refs::with_front_matter`] says.
 ///
-/// `chain` holds the canonical paths of the files being embedded, outermost first, to catch a cycle.
 /// The embedded file's own embeds are resolved first, then its image and link URLs are rebased to
 /// `base_dir`, and its front matter is dropped.
-pub fn embed<'a>(
-    loader: &Loader<'a>,
+fn embed<'a>(
+    ctx: &mut EmbedContext<'_, 'a>,
     root: Node<'a>,
-    root_dir: &Path,
     base_dir: &Path,
-    patterns: &[Regex],
     refs: &Refs,
-    chain: &mut Vec<PathBuf>,
 ) -> anyhow::Result<()> {
     // Edits while walking would confuse the walk, so collect the paragraphs first.
     let mut embeds = Vec::new();
     for node in root.descendants() {
-        if let Some(url) = embedded_url(node, patterns)? {
+        if let Some(url) = embedded_url(node, ctx.patterns)? {
             embeds.push((node, url));
         }
     }
 
     for (paragraph, url) in embeds {
-        let path = resolve(root_dir, base_dir, &url);
+        let path = resolve(ctx.root_dir, base_dir, &url);
         let text = fs::read_to_string(&path)
             .with_context(|| format!("Failed to read embedded markdown: {}", path.display()))?;
         let identity = fs::canonicalize(&path)?;
-        if chain.contains(&identity) {
-            let mut cycle: Vec<String> = chain.iter().map(|p| p.display().to_string()).collect();
+        if ctx.chain.contains(&identity) {
+            let mut cycle: Vec<String> =
+                ctx.chain.iter().map(|p| p.display().to_string()).collect();
             cycle.push(identity.display().to_string());
             anyhow::bail!("Embed cycle: {}", cycle.join(" -> "));
         }
@@ -77,21 +84,14 @@ pub fn embed<'a>(
         let refs = refs
             .with_front_matter(&text)
             .with_context(|| format!("Failed to load the refs of: {}", path.display()))?;
-        let embedded = loader
+        let embedded = ctx
+            .loader
             .load(&text, &refs)
             .with_context(|| format!("Failed to parse embedded markdown: {}", path.display()))?;
 
-        chain.push(identity);
-        embed(
-            loader,
-            embedded,
-            root_dir,
-            embedded_dir,
-            patterns,
-            &refs,
-            chain,
-        )?;
-        chain.pop();
+        ctx.chain.push(identity);
+        embed(ctx, embedded, embedded_dir, &refs)?;
+        ctx.chain.pop();
         rebase_urls(embedded, embedded_dir, base_dir)?;
 
         let children: Vec<Node<'a>> = embedded.children().collect();
@@ -313,7 +313,13 @@ mod tests {
         let path = dir.path();
         let loader = Loader::new(&arena, &[]);
         let refs = Refs::default();
-        embed(&loader, root, path, path, &patterns, &refs, &mut Vec::new())?;
+        let mut ctx = EmbedContext {
+            loader: &loader,
+            root_dir: path,
+            patterns: &patterns,
+            chain: Vec::new(),
+        };
+        embed(&mut ctx, root, path, &refs)?;
 
         let mut out = String::new();
         comrak::format_commonmark(root, &options, &mut out)?;
@@ -351,6 +357,12 @@ mod tests {
         let patterns = [Regex::new(DEFAULT_PATTERN)?];
         let loader = Loader::new(arena, &[]);
         let refs = Refs::default();
-        embed(&loader, root, dir, dir, &patterns, &refs, &mut Vec::new())
+        let mut ctx = EmbedContext {
+            loader: &loader,
+            root_dir: dir,
+            patterns: &patterns,
+            chain: Vec::new(),
+        };
+        embed(&mut ctx, root, dir, &refs)
     }
 }
