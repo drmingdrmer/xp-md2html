@@ -10,6 +10,7 @@ use image::Rgba;
 use image::RgbaImage;
 use image_compare::Algorithm;
 use xp_md2html::render::chrome::ChromeRenderer;
+use xp_md2html::render::chrome::OutputFormat;
 use xp_md2html::render::chrome::RenderConfig;
 
 /// An unchanged page scores 1.0; a one-character typo in `simple.html` scores about 0.88.
@@ -142,7 +143,7 @@ fn do_run_golden_test(test: &GoldenTest) -> Result<()> {
     // Render the image
     let config = RenderConfig {
         mime: test.mime_type.to_string(),
-        output_type: "png".to_string(),
+        output_type: OutputFormat::Png,
         width: test.width,
         height: test.height,
         scale: 1,
@@ -248,7 +249,7 @@ fn test_failure_demo() {
 
     let config = RenderConfig {
         mime: test.mime_type.to_string(),
-        output_type: "png".to_string(),
+        output_type: OutputFormat::Png,
         width: test.width,
         height: test.height,
         scale: 1,

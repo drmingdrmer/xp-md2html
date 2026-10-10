@@ -592,6 +592,7 @@ pub(crate) fn short_hash(content: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render::chrome::OutputFormat;
     use crate::render::chrome::RenderConfig;
 
     #[test]
@@ -726,7 +727,7 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let config = RenderConfig {
             mime: "text/html".to_string(),
-            output_type: "png".to_string(),
+            output_type: OutputFormat::Png,
             width: 1000,
             height: 1000,
             scale: 1,

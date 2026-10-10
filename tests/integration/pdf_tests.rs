@@ -3,6 +3,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use xp_md2html::render::chrome::ChromeRenderer;
+use xp_md2html::render::chrome::OutputFormat;
 use xp_md2html::render::chrome::RenderConfig;
 
 /// The PDF draws the page's text as text, which a screenshot PDF would hold only as an image: the
@@ -14,7 +15,7 @@ fn test_pdf_keeps_text() -> Result<()> {
 
     let config = RenderConfig {
         mime: "text/html".to_string(),
-        output_type: "pdf".to_string(),
+        output_type: OutputFormat::Pdf,
         width: 800,
         height: 600,
         scale: 1,

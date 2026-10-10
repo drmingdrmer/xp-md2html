@@ -20,6 +20,7 @@ use xp_md2html::process::Action;
 use xp_md2html::process::ActionContext;
 use xp_md2html::render::chrome::ChromeRenderer;
 use xp_md2html::render::chrome::LazyRenderer;
+use xp_md2html::render::chrome::OutputFormat;
 use xp_md2html::render::chrome::RenderConfig;
 use xp_md2html::render::code::code_to_html;
 use xp_md2html::render::code::load_theme;
@@ -366,7 +367,7 @@ fn render_command(args: RenderArgs) -> Result<()> {
     // Render using Chrome
     let config = RenderConfig {
         mime: mime_type,
-        output_type: format.to_string(),
+        output_type: format,
         width,
         height,
         scale,
@@ -417,7 +418,7 @@ fn render_math_command(args: RenderMathArgs) -> Result<()> {
 
     let config = RenderConfig {
         mime: "text/html".to_string(),
-        output_type: format.to_string(),
+        output_type: format,
         width: MATH_WINDOW_WIDTH,
         height: MATH_WINDOW_HEIGHT,
         scale,
@@ -426,7 +427,7 @@ fn render_math_command(args: RenderMathArgs) -> Result<()> {
     let renderer = ChromeRenderer::new(config)?;
 
     let display = !inline;
-    let data = if format == "svg" {
+    let data = if format == OutputFormat::Svg {
         let mut svg = math_to_svg(&renderer, &tex, display)?;
         svg.push('\n');
         svg.into_bytes()
@@ -485,7 +486,7 @@ fn render_diagram_command(
     // The DOM dump that makes the SVG does not depend on the window; the image gets its own.
     let config = RenderConfig {
         mime: "text/html".to_string(),
-        output_type: format.to_string(),
+        output_type: format,
         width: MATH_WINDOW_WIDTH,
         height: MATH_WINDOW_HEIGHT,
         scale,
@@ -493,7 +494,7 @@ fn render_diagram_command(
     };
     let renderer = ChromeRenderer::new(config)?;
     let mut svg = to_svg(&renderer, &source)?;
-    if format == "svg" {
+    if format == OutputFormat::Svg {
         svg.push('\n');
         return write_output(output.as_deref(), svg.as_bytes());
     }
@@ -542,25 +543,26 @@ fn file_dir(path: Option<&Path>) -> Result<PathBuf> {
 /// The output formats of `render-math` and `render-graphviz`, as error messages list them.
 const SUPPORTED_SVG_FORMATS: &str = "svg, png, jpg, jpeg";
 
+/// The output formats of `render-math`, `render-graphviz` and `render-mermaid`.
+const SVG_FORMATS: [OutputFormat; 3] = [OutputFormat::Svg, OutputFormat::Png, OutputFormat::Jpg];
+
 /// Return the output format of `render-math` and `render-graphviz`: `-f`, else the extension of
 /// `-o`, else svg.
-fn resolve_svg_format(format: Option<&str>, output: Option<&Path>) -> Result<&'static str> {
+fn resolve_svg_format(format: Option<&str>, output: Option<&Path>) -> Result<OutputFormat> {
     let extension = output
         .and_then(Path::extension)
         .and_then(|ext| ext.to_str());
     let Some(name) = format.or(extension) else {
-        return Ok("svg");
+        return Ok(OutputFormat::Svg);
     };
-    match name.to_lowercase().as_str() {
-        "svg" => Ok("svg"),
-        "png" => Ok("png"),
-        "jpg" | "jpeg" => Ok("jpg"),
-        _ => anyhow::bail!(
+    let Some(format) = format_of(name, &SVG_FORMATS) else {
+        anyhow::bail!(
             "Unsupported output format: {}. Supported: {}",
             name,
             SUPPORTED_SVG_FORMATS
-        ),
-    }
+        );
+    };
+    Ok(format)
 }
 
 fn process_command(args: ProcessArgs) -> Result<()> {
@@ -626,7 +628,7 @@ fn process_command(args: ProcessArgs) -> Result<()> {
 
     let config = RenderConfig {
         mime: "text/html".to_string(),
-        output_type: "png".to_string(),
+        output_type: OutputFormat::Png,
         width,
         height,
         scale,
@@ -669,28 +671,31 @@ fn process_command(args: ProcessArgs) -> Result<()> {
 /// The output formats that `-f` and the output file's extension accept, as error messages list them.
 const SUPPORTED_FORMATS: &str = "png, jpg, jpeg, pdf";
 
-/// Return the output format that `name`, a `-f` value or a file extension, names.
-fn format_of(name: &str) -> Option<&'static str> {
-    match name.to_lowercase().as_str() {
-        "png" => Some("png"),
-        "jpg" | "jpeg" => Some("jpg"),
-        "pdf" => Some("pdf"),
-        _ => None,
+/// The output formats of `render-markup`.
+const MARKUP_FORMATS: [OutputFormat; 3] = [OutputFormat::Png, OutputFormat::Jpg, OutputFormat::Pdf];
+
+/// Return the output format among `supported` that `name`, a `-f` value or a file extension, names.
+fn format_of(name: &str, supported: &[OutputFormat]) -> Option<OutputFormat> {
+    let format = OutputFormat::from_name(name)?;
+    let is_supported = supported.contains(&format);
+    if !is_supported {
+        return None;
     }
+    Some(format)
 }
 
 /// Return the output format of `render-markup`: `-f`, else the extension of `output`, else png.
 ///
 /// When `-f` and the extension both name a format, the two must agree.
-fn resolve_format(format: Option<&str>, output: Option<&Path>) -> Result<&'static str> {
+fn resolve_format(format: Option<&str>, output: Option<&Path>) -> Result<OutputFormat> {
     let extension = output
         .and_then(Path::extension)
         .and_then(|ext| ext.to_str());
-    let extension_format = extension.and_then(format_of);
+    let extension_format = extension.and_then(|ext| format_of(ext, &MARKUP_FORMATS));
 
     let Some(format) = format else {
         let Some(extension) = extension else {
-            return Ok("png");
+            return Ok(OutputFormat::Png);
         };
         return extension_format.with_context(|| {
             format!(
@@ -700,7 +705,7 @@ fn resolve_format(format: Option<&str>, output: Option<&Path>) -> Result<&'stati
         });
     };
 
-    let Some(flag_format) = format_of(format) else {
+    let Some(flag_format) = format_of(format, &MARKUP_FORMATS) else {
         anyhow::bail!(
             "Unsupported output format: {}. Supported: {}",
             format,
@@ -725,55 +730,55 @@ mod tests {
     #[test]
     fn test_resolve_format_from_extension() -> Result<()> {
         let format = resolve_format(None, Some(Path::new("out.JPG")))?;
-        assert_eq!(format, "jpg");
+        assert_eq!(format, OutputFormat::Jpg);
 
         let format = resolve_format(None, Some(Path::new("out.jpeg")))?;
-        assert_eq!(format, "jpg");
+        assert_eq!(format, OutputFormat::Jpg);
 
         let format = resolve_format(None, Some(Path::new("out.pdf")))?;
-        assert_eq!(format, "pdf");
+        assert_eq!(format, OutputFormat::Pdf);
         Ok(())
     }
 
     #[test]
     fn test_resolve_format_default() -> Result<()> {
         let stdout = resolve_format(None, None)?;
-        assert_eq!(stdout, "png");
+        assert_eq!(stdout, OutputFormat::Png);
 
         let no_extension = resolve_format(None, Some(Path::new("out")))?;
-        assert_eq!(no_extension, "png");
+        assert_eq!(no_extension, OutputFormat::Png);
         Ok(())
     }
 
     #[test]
     fn test_resolve_format_from_flag() -> Result<()> {
         let format = resolve_format(Some("PNG"), Some(Path::new("out")))?;
-        assert_eq!(format, "png");
+        assert_eq!(format, OutputFormat::Png);
 
         let format = resolve_format(Some("png"), Some(Path::new("out.tmp")))?;
-        assert_eq!(format, "png");
+        assert_eq!(format, OutputFormat::Png);
 
         let format = resolve_format(Some("jpeg"), Some(Path::new("out.jpg")))?;
-        assert_eq!(format, "jpg");
+        assert_eq!(format, OutputFormat::Jpg);
 
         let format = resolve_format(Some("pdf"), None)?;
-        assert_eq!(format, "pdf");
+        assert_eq!(format, OutputFormat::Pdf);
         Ok(())
     }
 
     #[test]
     fn test_resolve_svg_format() -> Result<()> {
         let default = resolve_svg_format(None, None)?;
-        assert_eq!(default, "svg");
+        assert_eq!(default, OutputFormat::Svg);
 
         let from_extension = resolve_svg_format(None, Some(Path::new("x.PNG")))?;
-        assert_eq!(from_extension, "png");
+        assert_eq!(from_extension, OutputFormat::Png);
 
         let flag_wins = resolve_svg_format(Some("jpeg"), Some(Path::new("x.svg")))?;
-        assert_eq!(flag_wins, "jpg");
+        assert_eq!(flag_wins, OutputFormat::Jpg);
 
         let no_extension = resolve_svg_format(None, Some(Path::new("x")))?;
-        assert_eq!(no_extension, "svg");
+        assert_eq!(no_extension, OutputFormat::Svg);
 
         let error = resolve_svg_format(None, Some(Path::new("x.pdf"))).unwrap_err();
         assert_eq!(

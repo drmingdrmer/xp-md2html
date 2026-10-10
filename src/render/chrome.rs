@@ -32,13 +32,50 @@ const MAGICK_HELP: &str = "Failed to trim the image. Make sure ImageMagick is in
     ImageMagick: On Linux: sudo apt install imagemagick\n\
     ImageMagick: On Windows: Install from https://imagemagick.org/";
 
+/// The format of the file that a render makes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OutputFormat {
+    /// A PNG, which keeps the page's transparent background.
+    Png,
+    /// A JPEG, on a white background.
+    Jpg,
+    /// A PDF that Chrome prints, so that its text stays text.
+    Pdf,
+    /// The SVG of a formula or a diagram, which Chrome draws but does not capture.
+    Svg,
+}
+
+impl OutputFormat {
+    /// The format that `name`, such as a `-f` value or a file extension, names in any case; `jpeg`
+    /// names [`OutputFormat::Jpg`].
+    pub fn from_name(name: &str) -> Option<Self> {
+        match name.to_lowercase().as_str() {
+            "png" => Some(Self::Png),
+            "jpg" | "jpeg" => Some(Self::Jpg),
+            "pdf" => Some(Self::Pdf),
+            "svg" => Some(Self::Svg),
+            _ => None,
+        }
+    }
+
+    /// The name of the format, which ImageMagick reads in an output spec such as `png:-`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Png => "png",
+            Self::Jpg => "jpg",
+            Self::Pdf => "pdf",
+            Self::Svg => "svg",
+        }
+    }
+}
+
 /// Settings that every render of one [`ChromeRenderer`] uses.
 #[derive(Clone)]
 pub struct RenderConfig {
     /// A full mime type such as "image/jpeg" or a shortcut "jpg"
     pub mime: String,
-    /// Output image type such as "png", "jpg"
-    pub output_type: String,
+    /// The format of the file that a render makes
+    pub output_type: OutputFormat,
     /// The window width to render a page
     pub width: u32,
     /// The window height to render a page
@@ -90,7 +127,7 @@ impl ChromeRenderer {
         let cwd = temp_dir.path();
 
         // A PDF is printed so that its text stays text; a screenshot would make it an image.
-        let is_pdf = self.config.output_type == "pdf";
+        let is_pdf = self.config.output_type == OutputFormat::Pdf;
         let capture: &[&str] = if is_pdf {
             // Without `--no-pdf-header-footer`, Chrome adds the date, the file URL and page numbers.
             &["--print-to-pdf", "--no-pdf-header-footer"]
@@ -427,12 +464,12 @@ impl ChromeRenderer {
 
     /// Build a ImageMagick command to trim image that output directly to stdout
     fn build_trim_image_cmd(&self, magick: &str, screenshot_path: &Path) -> Command {
-        let output_type = self.config.output_type.as_str();
+        let output_type = self.config.output_type;
 
         let mut cmd = Command::new(magick);
         cmd.arg(screenshot_path).arg("-trim").arg("+repage");
 
-        if output_type == "png" {
+        if output_type == OutputFormat::Png {
             // Nothing to do, keep transparent background
         } else {
             // flatten alpha channel
@@ -440,7 +477,7 @@ impl ChromeRenderer {
         }
 
         // Output to stdout
-        cmd.arg(format!("{}:-", output_type));
+        cmd.arg(format!("{}:-", output_type.name()));
 
         cmd
     }
@@ -600,7 +637,7 @@ mod tests {
     fn renderer_without_chrome(width: u32, height: u32, scale: u32) -> ChromeRenderer {
         let config = RenderConfig {
             mime: "text/html".to_string(),
-            output_type: "png".to_string(),
+            output_type: OutputFormat::Png,
             width,
             height,
             scale,
