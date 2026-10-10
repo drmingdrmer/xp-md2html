@@ -256,19 +256,18 @@ impl FromStr for Action {
 }
 
 impl Action {
-    /// Apply this action to the tree under `root`, which `arena` owns and comrak parsed from
-    /// `source`.
+    /// Apply this action to the tree under `root`, which `arena` owns and `loader` parsed.
     pub fn apply<'a>(
         &self,
         arena: &'a Arena<'a>,
         root: Node<'a>,
-        source: &str,
+        loader: &Loader<'a>,
         ctx: &ActionContext,
     ) -> anyhow::Result<()> {
         match self {
             Self::TableToImage => table_to_image::apply(arena, root, ctx),
             Self::DownloadImages => download_images::apply(root, ctx),
-            Self::EmbedMarkdown => embed_markdown::apply(arena, root, ctx),
+            Self::EmbedMarkdown => embed_markdown::apply(loader, root, ctx),
             Self::ImageToAsset => image_to_asset::apply(root, ctx),
             Self::TableToHtml => table_to_html::apply(arena, root),
             Self::MermaidToImage => mermaid_to_image::apply(arena, root, ctx),
@@ -284,9 +283,8 @@ impl Action {
                 Ok(())
             }
             Self::AppendReferenceList => {
-                // The `markdown` crate, which finds the used references, takes no callback.
-                let source = ctx.refs.append_definitions(source);
-                append_reference_list::apply(arena, root, &source)
+                append_reference_list::apply(arena, root, loader);
+                Ok(())
             }
             Self::MathBlockToOneLine => {
                 math_block_to_one_line::apply(root);
@@ -323,12 +321,38 @@ pub fn gfm_math_options() -> Options<'static> {
     options
 }
 
-/// [`gfm_math_options`] with the callback that resolves a reference that the markdown does not
-/// define with `refs`.
-pub(crate) fn parse_options(refs: &Refs) -> Options<'static> {
-    let mut options = gfm_math_options();
-    options.parse.broken_link_callback = Some(refs.broken_link_callback());
-    options
+/// Parses the input file and each file that it embeds into a tree in one arena, and keeps each link
+/// that a reference made, for `append-reference-list`.
+pub struct Loader<'a> {
+    /// The arena that owns the trees.
+    arena: &'a Arena<'a>,
+    /// Each link that a reference made, with the label of its definition, in the order of the
+    /// parses.
+    references: RefCell<Vec<(Node<'a>, String)>>,
+}
+
+impl<'a> Loader<'a> {
+    /// A loader that parses into `arena`.
+    pub fn new(arena: &'a Arena<'a>) -> Self {
+        Self {
+            arena,
+            references: RefCell::default(),
+        }
+    }
+
+    /// Parse `markdown` into a tree; a reference that the markdown does not define resolves with
+    /// `refs`.
+    pub fn load(&self, markdown: &str, refs: &Refs) -> anyhow::Result<Node<'a>> {
+        let (root, references) = refs.parse(self.arena, markdown)?;
+        self.references.borrow_mut().extend(references);
+        Ok(root)
+    }
+
+    /// Each link that a reference `[text][label]`, `[label][]` or `[label]` made, with the label of
+    /// its definition, in the order of the parses.
+    pub fn references(&self) -> Vec<(Node<'a>, String)> {
+        self.references.borrow().clone()
+    }
 }
 
 /// An image of `url` without alt text, the inline that replaces a formula.
@@ -354,7 +378,7 @@ pub fn process_markdown(
     actions: &[Action],
     ctx: &ActionContext,
 ) -> anyhow::Result<String> {
-    let options = parse_options(&ctx.refs);
+    let options = gfm_math_options();
     let joins = actions.contains(&Action::JoinMathBlock);
     let markdown = if joins {
         join_math_block::join(markdown)
@@ -362,10 +386,11 @@ pub fn process_markdown(
         markdown.to_string()
     };
     let arena = Arena::new();
-    let root = comrak::parse_document(&arena, &markdown, &options);
+    let loader = Loader::new(&arena);
+    let root = loader.load(&markdown, &ctx.refs)?;
 
     for action in actions {
-        action.apply(&arena, root, &markdown, ctx)?;
+        action.apply(&arena, root, &loader, ctx)?;
     }
     escape_dollars(&arena, root);
 

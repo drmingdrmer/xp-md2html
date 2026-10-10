@@ -1,17 +1,16 @@
 //! `append-reference-list`: append a list of the link references that the file uses, as md2zhihu's
 //! `render_ref_list` does.
 
-use std::collections::HashMap;
-use std::collections::HashSet;
-
 use comrak::nodes::NodeLink;
 use comrak::nodes::NodeList;
 use comrak::nodes::NodeValue;
 use comrak::Arena;
 use comrak::Node;
-use markdown::mdast;
+
+use super::Loader;
 
 /// A link reference definition, `[label]: url "title"`.
+#[derive(PartialEq)]
 struct Reference {
     label: String,
     url: String,
@@ -19,12 +18,12 @@ struct Reference {
 }
 
 /// Append to `root` a "Reference:" list with one `- <title, or label> : <url>` item for each
-/// definition in `source` that a `[text][label]`, `[label][]` or `[label]` link uses, sorted by
+/// definition that a `[text][label]`, `[label][]` or `[label]` link of `loader` uses, sorted by
 /// label.
-pub fn apply<'a>(arena: &'a Arena<'a>, root: Node<'a>, source: &str) -> anyhow::Result<()> {
-    let references = used_references(source)?;
+pub fn apply<'a>(arena: &'a Arena<'a>, root: Node<'a>, loader: &Loader<'a>) {
+    let references = used_references(loader);
     if references.is_empty() {
-        return Ok(());
+        return;
     }
 
     let label = arena.alloc(NodeValue::Text("Reference:".into()).into());
@@ -45,7 +44,6 @@ pub fn apply<'a>(arena: &'a Arena<'a>, root: Node<'a>, source: &str) -> anyhow::
         list.append(item);
     }
     root.append(list);
-    Ok(())
 }
 
 /// The paragraph `<title, or label> : <url>` of `reference`. The URL is a link node, so a later
@@ -69,70 +67,38 @@ fn reference_paragraph<'a>(arena: &'a Arena<'a>, reference: Reference) -> Node<'
     paragraph
 }
 
-/// The definitions in `source` that a link uses, sorted by label.
-///
-/// comrak drops the definitions and keeps no trace of which link was a reference, so the `markdown`
-/// crate parses `source` again, with the same GFM, math and front matter syntax.
-fn used_references(source: &str) -> anyhow::Result<Vec<Reference>> {
-    let options = markdown::ParseOptions {
-        constructs: markdown::Constructs {
-            frontmatter: true,
-            math_flow: true,
-            math_text: true,
-            ..markdown::Constructs::gfm()
-        },
-        ..markdown::ParseOptions::gfm()
-    };
-    let tree = markdown::to_mdast(source, &options)
-        .map_err(|message| anyhow::anyhow!("Failed to parse markdown: {message}"))?;
-
-    let mut definitions = HashMap::new();
-    let mut used = HashSet::new();
-    collect(&tree, &mut definitions, &mut used);
-
-    definitions.retain(|identifier, _| used.contains(identifier));
-    let mut references: Vec<Reference> = definitions.into_values().collect();
+/// The definition that each link of `loader` made by a reference uses, once each, sorted by label.
+/// Each takes its link's current URL and title, which shows the edits of the earlier actions; a
+/// link that an action took out of the tree, such as into the image of a table, counts too.
+fn used_references(loader: &Loader<'_>) -> Vec<Reference> {
+    let mut references = Vec::new();
+    for (node, label) in loader.references() {
+        let data = node.data();
+        let NodeValue::Link(link) = &data.value else {
+            continue;
+        };
+        let title = if link.title.is_empty() {
+            None
+        } else {
+            Some(link.title.clone())
+        };
+        let reference = Reference {
+            label,
+            url: link.url.clone(),
+            title,
+        };
+        if !references.contains(&reference) {
+            references.push(reference);
+        }
+    }
     references.sort_by(|a, b| a.label.cmp(&b.label));
-    Ok(references)
-}
-
-/// Add every definition under `node` to `definitions` and the identifier of every link reference to
-/// `used`; both are keyed by the normalized label.
-fn collect(
-    node: &mdast::Node,
-    definitions: &mut HashMap<String, Reference>,
-    used: &mut HashSet<String>,
-) {
-    match node {
-        mdast::Node::Definition(definition) => {
-            let label = definition.label.clone();
-            let reference = Reference {
-                label: label.unwrap_or_else(|| definition.identifier.clone()),
-                url: definition.url.clone(),
-                title: definition.title.clone(),
-            };
-            // As in CommonMark, the first definition of a label wins.
-            definitions
-                .entry(definition.identifier.clone())
-                .or_insert(reference);
-        }
-        mdast::Node::LinkReference(link) => {
-            used.insert(link.identifier.clone());
-        }
-        _ => {}
-    }
-
-    let Some(children) = node.children() else {
-        return;
-    };
-    for child in children {
-        collect(child, definitions, used);
-    }
+    references
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::process::refs::Refs;
 
     /// Each used definition gets an item, sorted by label and named by its title if it has one; an
     /// unused definition, an inline link and a definition in a code block get none.
@@ -144,12 +110,13 @@ mod tests {
                         [unused]: http://u.com\n\n\
                         ```text\n[x]: http://x.com\n```\n";
         let arena = Arena::new();
-        let options = super::super::gfm_math_options();
-        let root = comrak::parse_document(&arena, markdown, &options);
+        let loader = Loader::new(&arena);
+        let root = loader.load(markdown, &Refs::default())?;
 
-        apply(&arena, root, markdown)?;
+        apply(&arena, root, &loader);
 
         let mut out = String::new();
+        let options = super::super::gfm_math_options();
         comrak::format_commonmark(root, &options, &mut out)?;
         let expected = "Read [the post](http://b.com \"Post B\"), [A](http://a.com), \\[x\\] and \
                         [c](http://c.com).\n\n\
@@ -166,14 +133,44 @@ mod tests {
     fn test_apply_without_references() -> anyhow::Result<()> {
         let markdown = "See [c](http://c.com).\n\n[unused]: http://u.com\n";
         let arena = Arena::new();
-        let options = super::super::gfm_math_options();
-        let root = comrak::parse_document(&arena, markdown, &options);
+        let loader = Loader::new(&arena);
+        let root = loader.load(markdown, &Refs::default())?;
 
-        apply(&arena, root, markdown)?;
+        apply(&arena, root, &loader);
 
         let mut out = String::new();
+        let options = super::super::gfm_math_options();
         comrak::format_commonmark(root, &options, &mut out)?;
         assert_eq!(out, "See [c](http://c.com).\n");
+        Ok(())
+    }
+
+    /// The list takes the definitions of every parse of the loader, also of a tree out of `root`,
+    /// once each, with the current URL of the link; an image that a reference made gets no item.
+    #[test]
+    fn test_apply_current_links() -> anyhow::Result<()> {
+        let arena = Arena::new();
+        let loader = Loader::new(&arena);
+        let refs = Refs::default();
+        let markdown = "[a], [A] and ![i][b].\n\n[a]: http://old.com/a\n[b]: http://b.com\n";
+        let root = loader.load(markdown, &refs)?;
+        loader.load("[c]\n\n[c]: http://c.com \"C\"\n", &refs)?;
+        for node in root.descendants() {
+            if let NodeValue::Link(link) = &mut node.data_mut().value {
+                link.url = link.url.replace("old", "new");
+            }
+        }
+
+        apply(&arena, root, &loader);
+
+        let mut out = String::new();
+        let options = super::super::gfm_math_options();
+        comrak::format_commonmark(root, &options, &mut out)?;
+        let expected = "[a](http://new.com/a), [A](http://new.com/a) and ![i](http://b.com).\n\n\
+                        Reference:\n\n\
+                        - a : <http://new.com/a>\n\n\
+                        - C : <http://c.com>\n";
+        assert_eq!(out, expected);
         Ok(())
     }
 }

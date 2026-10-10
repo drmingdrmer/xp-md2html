@@ -547,7 +547,8 @@ fn test_process_append_reference_list() -> Result<()> {
     Ok(())
 }
 
-/// `rewrite-link-urls` after `append-reference-list` rewrites the URLs in the reference list too.
+/// The reference list holds the URL that `rewrite-link-urls` gives, whether it runs before or after
+/// `append-reference-list`.
 #[test]
 fn test_process_rewrite_reference_list() -> Result<()> {
     let dir = tempfile::tempdir()?;
@@ -556,22 +557,28 @@ fn test_process_rewrite_reference_list() -> Result<()> {
     let output = dir.path().join("out/post.md");
     let link_rule = "rewrite-link-urls=|^https://old\\.com/|https://new.com/|";
 
-    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
-        .args(["process", "-i"])
-        .arg(&input)
-        .arg("-o")
-        .arg(&output)
-        .args(["--action", "append-reference-list", "--action", link_rule])
-        .output()?;
+    let orders = [["append-reference-list", link_rule], [
+        link_rule,
+        "append-reference-list",
+    ]];
+    for [first, second] in orders {
+        let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+            .args(["process", "-i"])
+            .arg(&input)
+            .arg("-o")
+            .arg(&output)
+            .args(["--action", first, "--action", second])
+            .output()?;
 
-    let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+        let stderr = String::from_utf8(result.stderr)?;
+        assert_eq!(stderr, "");
 
-    let markdown = fs::read_to_string(&output)?;
-    let expected_markdown = "See [p](https://new.com/p \"P\").\n\n\
-                             Reference:\n\n\
-                             - P : <https://new.com/p>\n";
-    assert_eq!(markdown, expected_markdown);
+        let markdown = fs::read_to_string(&output)?;
+        let expected_markdown = "See [p](https://new.com/p \"P\").\n\n\
+                                 Reference:\n\n\
+                                 - P : <https://new.com/p>\n";
+        assert_eq!(markdown, expected_markdown);
+    }
     Ok(())
 }
 
@@ -1306,6 +1313,46 @@ fn test_process_embed_refs() -> Result<()> {
                              and [b](https://b.invalid/sub).\n\n\
                              [b](https://b.invalid/sub) and [c](https://c.invalid/inner).\n\n\
                              Post [b](https://b.invalid/post).\n";
+    assert_eq!(markdown, expected_markdown);
+    Ok(())
+}
+
+/// `append-reference-list` lists the definitions that the links of an embedded file use: the
+/// file's own and those of `--refs`.
+#[test]
+fn test_process_embed_reference_list() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let ref_file = dir.path().join("refs.yaml");
+    fs::write(
+        &ref_file,
+        "universal:\n  doc: https://example.invalid/doc\n",
+    )?;
+    fs::write(
+        dir.path().join("sub.md"),
+        "See [used][spec] and [doc].\n\n[spec]: https://example.invalid/spec\n",
+    )?;
+    let input = dir.path().join("post.md");
+    fs::write(&input, "![](sub.md)\n")?;
+    let output = dir.path().join("out/post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--preset", "transparent", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("--refs")
+        .arg(&ref_file)
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let expected_markdown = "See [used](https://example.invalid/spec) and \
+                             [doc](https://example.invalid/doc).\n\n\
+                             Reference:\n\n\
+                             - doc : <https://example.invalid/doc>\n\n\
+                             - spec : <https://example.invalid/spec>\n";
     assert_eq!(markdown, expected_markdown);
     Ok(())
 }

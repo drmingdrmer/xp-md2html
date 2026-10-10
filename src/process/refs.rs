@@ -1,9 +1,9 @@
 //! `--refs` and the front matter keys `refs` and `platform_refs`: link reference definitions for
 //! the references that the markdown does not define, as md2zhihu's `load_external_refs` and
-//! `FrontMatter.get_refs` load them.
+//! `FrontMatter.get_refs` load them; and the parse that tells which links the references made.
 
 use std::collections::BTreeMap;
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -11,26 +11,25 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use comrak::nodes::NodeValue;
-use comrak::options::BrokenLinkCallback;
 use comrak::options::BrokenLinkReference;
 use comrak::Arena;
+use comrak::Node;
 use comrak::ResolvedReference;
+use markdown::mdast;
 use yaml_rust2::Yaml;
 use yaml_rust2::YamlLoader;
 
 /// The shape of a list of definitions, as an error message names it.
 const LIST_FORM: &str = "must be a mapping of names to URLs, or a list of such mappings";
 
-/// The definition `[label]: value`.
+/// The definition `[label]: url "title"`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Definition {
-    /// The label as the YAML writes it.
+    /// The label as the YAML or the markdown writes it.
     label: String,
-    /// The URL and the optional title in markdown, such as `https://grpc.io "gRPC"`.
-    value: String,
-    /// The URL that comrak reads from `value`.
+    /// The URL as comrak reads it.
     url: String,
-    /// The title that comrak reads from `value`, or an empty one.
+    /// The title as comrak reads it, or an empty one.
     title: String,
 }
 
@@ -74,40 +73,76 @@ impl Refs {
         Ok(refs)
     }
 
-    /// The callback that resolves a reference that the markdown does not define.
-    pub fn broken_link_callback(&self) -> Arc<dyn BrokenLinkCallback> {
-        let mut resolved: HashMap<String, ResolvedReference> = HashMap::new();
-        for (key, definition) in &self.definitions {
-            let reference = ResolvedReference {
-                url: definition.url.clone(),
-                title: definition.title.clone(),
-            };
-            resolved.insert(key.clone(), reference);
-        }
-        let callback = move |reference: BrokenLinkReference| {
-            let found = resolved.get(reference.normalized)?;
-            Some(found.clone())
+    /// Parse `markdown` into a tree in `arena`; a reference resolves with the markdown's own
+    /// definition, else with these definitions. Return the tree, and each link that a reference
+    /// `[text][label]`, `[label][]` or `[label]` made, with the label of its definition, in order.
+    pub(crate) fn parse<'a>(
+        &self,
+        arena: &'a Arena<'a>,
+        markdown: &str,
+    ) -> anyhow::Result<(Node<'a>, Vec<(Node<'a>, String)>)> {
+        // comrak resolves a reference with the markdown's own definition and leaves no trace. So a
+        // mark after the `[` of each such definition hides it from comrak: every reference then
+        // goes to the callback, which gives a URL that names the label, and the walk after the
+        // parse puts the definition's URL and title back. The mark is a noncharacter that the
+        // markdown does not hold, so it marks nothing else.
+        let Some(mark) = ('\u{FDD0}'..='\u{FDEF}').find(|mark| !markdown.contains(*mark)) else {
+            anyhow::bail!("The markdown holds every noncharacter from U+FDD0 to U+FDEF");
         };
-        Arc::new(callback)
-    }
 
-    /// `markdown` followed by the line `[label]: value` of each definition, for a parser that takes
-    /// no callback; the markdown's own definition of a label comes first, so it wins.
-    pub fn append_definitions(&self, markdown: &str) -> String {
-        let mut text = markdown.to_string();
-        if self.definitions.is_empty() {
-            return text;
+        // The first definition of a label wins, so the definitions go in from the last one, which
+        // also keeps the offsets of the definitions before it.
+        let mut refs = self.clone();
+        let mut marked = markdown.to_string();
+        let definitions = document_definitions(markdown)?;
+        for (offset, key, definition) in definitions.into_iter().rev() {
+            marked.insert(offset + 1, mark);
+            refs.definitions.insert(key, definition);
         }
-        // A blank line ends the last block of the markdown.
-        if !text.ends_with('\n') {
-            text.push('\n');
+
+        let keys: HashSet<String> = refs.definitions.keys().cloned().collect();
+        let callback = move |reference: BrokenLinkReference| {
+            if !keys.contains(reference.normalized) {
+                return None;
+            }
+            let url = format!("{mark}{}", reference.normalized);
+            let resolved = ResolvedReference {
+                url,
+                title: String::new(),
+            };
+            Some(resolved)
+        };
+        let mut options = super::gfm_math_options();
+        options.parse.broken_link_callback = Some(Arc::new(callback));
+        let root = comrak::parse_document(arena, &marked, &options);
+
+        let mut links = Vec::new();
+        for node in root.descendants() {
+            let mut ast = node.data_mut();
+            let is_link = matches!(ast.value, NodeValue::Link(_));
+            match &mut ast.value {
+                NodeValue::Link(link) | NodeValue::Image(link) => {
+                    let Some(key) = link.url.strip_prefix(mark) else {
+                        continue;
+                    };
+                    let definition = &refs.definitions[key];
+                    link.url = definition.url.clone();
+                    link.title = definition.title.clone();
+                    if is_link {
+                        links.push((node, definition.label.clone()));
+                    }
+                }
+                // A definition can be text to comrak, such as one on the line after a `$$` formula:
+                // the `markdown` crate ends a formula block there, while comrak's formula is inline
+                // and its paragraph goes on. The text keeps no mark.
+                NodeValue::Text(text) if text.contains(mark) => {
+                    let unmarked = text.replace(mark, "");
+                    *text = unmarked.into();
+                }
+                _ => {}
+            }
         }
-        text.push('\n');
-        for definition in self.definitions.values() {
-            let line = format!("[{}]: {}\n", definition.label, definition.value);
-            text.push_str(&line);
-        }
-        text
+        Ok((root, links))
     }
 
     /// Add the `universal` list of the YAML file at `path`, then its list named by `platform`.
@@ -186,7 +221,6 @@ impl Refs {
         };
         let definition = Definition {
             label: label.to_string(),
-            value: value.to_string(),
             url,
             title,
         };
@@ -212,6 +246,84 @@ fn front_matter_yaml(markdown: &str) -> anyhow::Result<Option<Yaml>> {
         YamlLoader::load_from_str(text).context("Failed to parse the front matter as YAML")?;
     let yaml = documents.into_iter().next();
     Ok(yaml)
+}
+
+/// Each definition in `markdown`, with the offset of its `[` and the label as comrak looks it up, in
+/// order. comrak drops the definitions from the tree, so the `markdown` crate finds them, with the
+/// same GFM, math and front matter syntax.
+fn document_definitions(markdown: &str) -> anyhow::Result<Vec<(usize, String, Definition)>> {
+    let options = markdown::ParseOptions {
+        constructs: markdown::Constructs {
+            frontmatter: true,
+            math_flow: true,
+            math_text: true,
+            ..markdown::Constructs::gfm()
+        },
+        ..markdown::ParseOptions::gfm()
+    };
+    let tree = markdown::to_mdast(markdown, &options)
+        .map_err(|message| anyhow::anyhow!("Failed to parse markdown: {message}"))?;
+
+    let mut definitions = Vec::new();
+    collect_definitions(&tree, markdown, &mut definitions)?;
+    Ok(definitions)
+}
+
+/// Add each definition under `node`, with the offset of its `[` in `markdown` and the label as
+/// comrak looks it up, to `definitions`.
+fn collect_definitions(
+    node: &mdast::Node,
+    markdown: &str,
+    definitions: &mut Vec<(usize, String, Definition)>,
+) -> anyhow::Result<()> {
+    if let mdast::Node::Definition(definition) = node {
+        let label = definition.label.clone();
+        let found = Definition {
+            label: label.unwrap_or_else(|| definition.identifier.clone()),
+            url: definition.url.clone(),
+            title: definition.title.clone().unwrap_or_default(),
+        };
+        // The position starts at the indent before the `[`.
+        let position = definition
+            .position
+            .as_ref()
+            .with_context(|| format!("The definition of {} has no position", found.label))?;
+        let start = position.start.offset;
+        let indent = markdown[start..]
+            .find('[')
+            .with_context(|| format!("The definition of {} has no [", found.label))?;
+        let offset = start + indent;
+
+        // The `markdown` crate decodes the escapes in the label, while comrak looks a reference up
+        // by the label as written: up to the first `]` that no backslash escapes.
+        let written = written_label(&markdown[offset..])
+            .with_context(|| format!("The definition of {} has no ]", found.label))?;
+        let key = normalize_label(written);
+        definitions.push((offset, key, found));
+    }
+
+    let Some(children) = node.children() else {
+        return Ok(());
+    };
+    for child in children {
+        collect_definitions(child, markdown, definitions)?;
+    }
+    Ok(())
+}
+
+/// The label between the `[` that starts `text` and the first `]` that no backslash escapes.
+fn written_label(text: &str) -> Option<&str> {
+    let mut escaped = false;
+    for (index, c) in text.char_indices().skip(1) {
+        if escaped {
+            escaped = false;
+        } else if c == '\\' {
+            escaped = true;
+        } else if c == ']' {
+            return Some(&text[1..index]);
+        }
+    }
+    None
 }
 
 /// The URL and the title of the definition `[label]: value`, as comrak reads them, or `None` when
@@ -264,13 +376,9 @@ mod tests {
 
         let refs = Refs::load(&[first, second], markdown, Some("zhihu"))?;
 
-        let text = refs.append_definitions("Text.\n");
-        let expected = "Text.\n\n\
-                        [a]: http://u/a\n\
-                        [b]: http://z/b\n\
-                        [c]: http://u2/c\n\
-                        [d]: http://f/d\n\
-                        [e]: http://fz/e\n";
+        let text = format_parsed(&refs, "[a] [b] [c] [d] [e]\n")?;
+        let expected =
+            "[a](http://u/a) [b](http://z/b) [c](http://u2/c) [d](http://f/d) [e](http://fz/e)\n";
         assert_eq!(text, expected);
         Ok(())
     }
@@ -289,8 +397,8 @@ mod tests {
 
         let refs = Refs::load(&[file], markdown, None)?;
 
-        let text = refs.append_definitions("");
-        assert_eq!(text, "\n\n[a]: http://u/a\n[c]: http://f/c\n");
+        let text = format_parsed(&refs, "[a] [b] [c] [d]\n")?;
+        assert_eq!(text, "[a](http://u/a) \\[b\\] [c](http://f/c) \\[d\\]\n");
         Ok(())
     }
 
@@ -339,18 +447,16 @@ mod tests {
             "---\nrefs:\n  b: http://i/b\nplatform_refs:\n  zhihu:\n    c: http://iz/c\n---\n";
         let embedded = refs.with_front_matter(inner)?;
 
-        let text = embedded.append_definitions("");
-        assert_eq!(
-            text,
-            "\n\n[a]: http://o/a\n[b]: http://i/b\n[c]: http://iz/c\n"
-        );
+        let text = format_parsed(&embedded, "[a] [b] [c]\n")?;
+        assert_eq!(text, "[a](http://o/a) [b](http://i/b) [c](http://iz/c)\n");
         Ok(())
     }
 
-    /// comrak resolves a reference that the markdown does not define with the callback, by a label
-    /// in any case and spacing; the markdown's own definition wins.
+    /// A reference resolves with the markdown's own definition, else with the refs, by a label in
+    /// any case and spacing. The parse returns each link that a reference made, with the label of
+    /// its definition as written, and no image.
     #[test]
-    fn test_broken_link_callback() -> anyhow::Result<()> {
+    fn test_parse() -> anyhow::Result<()> {
         let dir = tempfile::tempdir()?;
         let file = dir.path().join("refs.yaml");
         fs::write(
@@ -359,16 +465,71 @@ mod tests {
         )?;
         let refs = Refs::load(&[file], "", None)?;
 
-        let markdown = "[a][big name], [own] and [none].\n\n[own]: http://f/own\n";
-        let mut options = super::super::gfm_math_options();
-        options.parse.broken_link_callback = Some(refs.broken_link_callback());
+        let markdown = "[a][big name], [own], ![i][own] and [none].\n\n[Own]: http://f/own\n";
         let arena = Arena::new();
-        let root = comrak::parse_document(&arena, markdown, &options);
+        let (root, links) = refs.parse(&arena, markdown)?;
 
         let mut out = String::new();
+        let options = super::super::gfm_math_options();
         comrak::format_commonmark(root, &options, &mut out)?;
-        let expected = "[a](http://u/big \"Big\"), [own](http://f/own) and \\[none\\].\n";
+        let expected = "[a](http://u/big \"Big\"), [own](http://f/own), ![i](http://f/own) and \
+                        \\[none\\].\n";
         assert_eq!(out, expected);
+
+        let mut found = Vec::new();
+        for (node, label) in links {
+            let data = node.data();
+            let NodeValue::Link(link) = &data.value else {
+                continue;
+            };
+            found.push((label, link.url.clone()));
+        }
+        let expected_found = vec![
+            ("Big  Name".to_string(), "http://u/big".to_string()),
+            ("Own".to_string(), "http://f/own".to_string()),
+        ];
+        assert_eq!(found, expected_found);
         Ok(())
+    }
+
+    /// Without refs, the parse gives the tree that comrak gives: for the definitions in a block
+    /// quote, a list and after non-ASCII text, with escapes, entities, a title on its own line and a
+    /// repeated label, and for a definition that comrak reads as text after a `$$` formula.
+    #[test]
+    fn test_parse_like_comrak() -> anyhow::Result<()> {
+        let markdown = "---\ntitle: T\n---\n\n\
+                        图 [x][A], [b], [c][], ![i][a], [a\\*b] and [d].\n\n\
+                        > [a]: <http://a.com/x y> \"T &amp; U\"\n\
+                        >   [b]: http://b\\_c.com\n\n\
+                        - [c]:\n  http://c.com\n  'C'\n\n\
+                        [a\\*b]: http://ab.com\n\
+                        [a]: http://dup.com\n\n\
+                        ```\n[d]: http://code.com\n```\n\n\
+                        [d]: http://d.com\n\n\
+                        $$\nx\n$$\n[q]: http://q.com\n";
+        let options = super::super::gfm_math_options();
+        let arena = Arena::new();
+        let comrak_root = comrak::parse_document(&arena, markdown, &options);
+        let mut expected = String::new();
+        comrak::format_commonmark(comrak_root, &options, &mut expected)?;
+
+        let (root, links) = Refs::default().parse(&arena, markdown)?;
+        let mut out = String::new();
+        comrak::format_commonmark(root, &options, &mut out)?;
+        assert_eq!(out, expected);
+
+        let labels: Vec<String> = links.into_iter().map(|(_, label)| label).collect();
+        assert_eq!(labels, ["a", "b", "c", "a*b", "d"]);
+        Ok(())
+    }
+
+    /// The markdown of the tree that `refs` parses from `markdown`.
+    fn format_parsed(refs: &Refs, markdown: &str) -> anyhow::Result<String> {
+        let arena = Arena::new();
+        let (root, _) = refs.parse(&arena, markdown)?;
+        let mut out = String::new();
+        let options = super::super::gfm_math_options();
+        comrak::format_commonmark(root, &options, &mut out)?;
+        Ok(out)
     }
 }

@@ -7,12 +7,12 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use comrak::nodes::NodeValue;
-use comrak::Arena;
 use comrak::Node;
 use fancy_regex::Regex;
 
 use super::refs::Refs;
 use super::ActionContext;
+use super::Loader;
 
 /// The regex of the image URLs that md2zhihu embeds when its `--embed` names none: every URL that
 /// ends with `.md`.
@@ -20,10 +20,10 @@ pub const DEFAULT_PATTERN: &str = "[.]md$";
 
 /// Replace every paragraph under `root` that holds only an image whose URL a regex of
 /// `ctx.embed_patterns` matches with the content of the file at the URL.
-pub fn apply<'a>(arena: &'a Arena<'a>, root: Node<'a>, ctx: &ActionContext) -> anyhow::Result<()> {
+pub fn apply<'a>(loader: &Loader<'a>, root: Node<'a>, ctx: &ActionContext) -> anyhow::Result<()> {
     let dir = &ctx.input_dir;
     embed(
-        arena,
+        loader,
         root,
         dir,
         dir,
@@ -44,7 +44,7 @@ pub fn apply<'a>(arena: &'a Arena<'a>, root: Node<'a>, ctx: &ActionContext) -> a
 /// The embedded file's own embeds are resolved first, then its image and link URLs are rebased to
 /// `base_dir`, and its front matter is dropped.
 pub fn embed<'a>(
-    arena: &'a Arena<'a>,
+    loader: &Loader<'a>,
     root: Node<'a>,
     root_dir: &Path,
     base_dir: &Path,
@@ -77,12 +77,13 @@ pub fn embed<'a>(
         let refs = refs
             .with_front_matter(&text)
             .with_context(|| format!("Failed to load the refs of: {}", path.display()))?;
-        let options = super::parse_options(&refs);
-        let embedded = comrak::parse_document(arena, &text, &options);
+        let embedded = loader
+            .load(&text, &refs)
+            .with_context(|| format!("Failed to parse embedded markdown: {}", path.display()))?;
 
         chain.push(identity);
         embed(
-            arena,
+            loader,
             embedded,
             root_dir,
             embedded_dir,
@@ -190,6 +191,8 @@ pub(super) fn is_relative(url: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use comrak::Arena;
+
     use super::*;
 
     #[test]
@@ -308,8 +311,9 @@ mod tests {
 
         let patterns = [Regex::new("[.]txt$")?, Regex::new("inc")?];
         let path = dir.path();
+        let loader = Loader::new(&arena);
         let refs = Refs::default();
-        embed(&arena, root, path, path, &patterns, &refs, &mut Vec::new())?;
+        embed(&loader, root, path, path, &patterns, &refs, &mut Vec::new())?;
 
         let mut out = String::new();
         comrak::format_commonmark(root, &options, &mut out)?;
@@ -345,7 +349,8 @@ mod tests {
     /// `embed` into a file in `dir` with md2zhihu's default regex, which embeds every `.md` URL.
     fn embed_md<'a>(arena: &'a Arena<'a>, root: Node<'a>, dir: &Path) -> anyhow::Result<()> {
         let patterns = [Regex::new(DEFAULT_PATTERN)?];
+        let loader = Loader::new(arena);
         let refs = Refs::default();
-        embed(arena, root, dir, dir, &patterns, &refs, &mut Vec::new())
+        embed(&loader, root, dir, dir, &patterns, &refs, &mut Vec::new())
     }
 }
