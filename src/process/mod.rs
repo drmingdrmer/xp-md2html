@@ -178,8 +178,8 @@ pub enum Action {
         /// The `/REGEX/REPL/` rule.
         rule: UrlRewrite,
     },
-    /// Join the paragraphs of a `$$` formula that blank lines split. It edits the input file's text
-    /// before the parse, so it takes effect wherever it is listed.
+    /// Join the paragraphs of a `$$` formula that blank lines split. It edits the text of the input
+    /// file and of each embedded file before the parse, so it takes effect wherever it is listed.
     JoinMathBlock,
 }
 
@@ -301,7 +301,7 @@ impl Action {
             }
             Self::RewriteImageUrls { rule } => rewrite_urls::apply_to_images(root, rule),
             Self::RewriteLinkUrls { rule } => rewrite_urls::apply_to_links(root, rule),
-            // `process_markdown` joins the text before the parse.
+            // `Loader::load` joins the text before the parse.
             Self::JoinMathBlock => Ok(()),
         }
     }
@@ -326,16 +326,21 @@ pub fn gfm_math_options() -> Options<'static> {
 pub struct Loader<'a> {
     /// The arena that owns the trees.
     arena: &'a Arena<'a>,
+    /// Whether to join a `$$` formula that blank lines split before the parse, for
+    /// `join-math-block`.
+    joins: bool,
     /// Each link that a reference made, with the label of its definition, in the order of the
     /// parses.
     references: RefCell<Vec<(Node<'a>, String)>>,
 }
 
 impl<'a> Loader<'a> {
-    /// A loader that parses into `arena`.
-    pub fn new(arena: &'a Arena<'a>) -> Self {
+    /// A loader that parses into `arena`, and joins split `$$` formulas when `actions` holds
+    /// `join-math-block`.
+    pub fn new(arena: &'a Arena<'a>, actions: &[Action]) -> Self {
         Self {
             arena,
+            joins: actions.contains(&Action::JoinMathBlock),
             references: RefCell::default(),
         }
     }
@@ -343,7 +348,12 @@ impl<'a> Loader<'a> {
     /// Parse `markdown` into a tree; a reference that the markdown does not define resolves with
     /// `refs`.
     pub fn load(&self, markdown: &str, refs: &Refs) -> anyhow::Result<Node<'a>> {
-        let (root, references) = refs.parse(self.arena, markdown)?;
+        let markdown = if self.joins {
+            join_math_block::join(markdown)
+        } else {
+            markdown.to_string()
+        };
+        let (root, references) = refs.parse(self.arena, &markdown)?;
         self.references.borrow_mut().extend(references);
         Ok(root)
     }
@@ -379,15 +389,9 @@ pub fn process_markdown(
     ctx: &ActionContext,
 ) -> anyhow::Result<String> {
     let options = gfm_math_options();
-    let joins = actions.contains(&Action::JoinMathBlock);
-    let markdown = if joins {
-        join_math_block::join(markdown)
-    } else {
-        markdown.to_string()
-    };
     let arena = Arena::new();
-    let loader = Loader::new(&arena);
-    let root = loader.load(&markdown, &ctx.refs)?;
+    let loader = Loader::new(&arena, actions);
+    let root = loader.load(markdown, &ctx.refs)?;
 
     for action in actions {
         action.apply(&arena, root, &loader, ctx)?;

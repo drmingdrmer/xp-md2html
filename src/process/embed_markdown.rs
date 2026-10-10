@@ -311,7 +311,7 @@ mod tests {
 
         let patterns = [Regex::new("[.]txt$")?, Regex::new("inc")?];
         let path = dir.path();
-        let loader = Loader::new(&arena);
+        let loader = Loader::new(&arena, &[]);
         let refs = Refs::default();
         embed(&loader, root, path, path, &patterns, &refs, &mut Vec::new())?;
 
@@ -349,7 +349,7 @@ mod tests {
     /// `embed` into a file in `dir` with md2zhihu's default regex, which embeds every `.md` URL.
     fn embed_md<'a>(arena: &'a Arena<'a>, root: Node<'a>, dir: &Path) -> anyhow::Result<()> {
         let patterns = [Regex::new(DEFAULT_PATTERN)?];
-        let loader = Loader::new(arena);
+        let loader = Loader::new(arena, &[]);
         let refs = Refs::default();
         embed(&loader, root, dir, dir, &patterns, &refs, &mut Vec::new())
     }

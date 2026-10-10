@@ -110,7 +110,7 @@ mod tests {
                         [unused]: http://u.com\n\n\
                         ```text\n[x]: http://x.com\n```\n";
         let arena = Arena::new();
-        let loader = Loader::new(&arena);
+        let loader = Loader::new(&arena, &[]);
         let root = loader.load(markdown, &Refs::default())?;
 
         apply(&arena, root, &loader);
@@ -133,7 +133,7 @@ mod tests {
     fn test_apply_without_references() -> anyhow::Result<()> {
         let markdown = "See [c](http://c.com).\n\n[unused]: http://u.com\n";
         let arena = Arena::new();
-        let loader = Loader::new(&arena);
+        let loader = Loader::new(&arena, &[]);
         let root = loader.load(markdown, &Refs::default())?;
 
         apply(&arena, root, &loader);
@@ -150,7 +150,7 @@ mod tests {
     #[test]
     fn test_apply_current_links() -> anyhow::Result<()> {
         let arena = Arena::new();
-        let loader = Loader::new(&arena);
+        let loader = Loader::new(&arena, &[]);
         let refs = Refs::default();
         let markdown = "[a], [A] and ![i][b].\n\n[a]: http://old.com/a\n[b]: http://b.com\n";
         let root = loader.load(markdown, &refs)?;

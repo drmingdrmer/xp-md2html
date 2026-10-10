@@ -630,6 +630,37 @@ fn test_process_join_math_block() -> Result<()> {
     Ok(())
 }
 
+/// `join-math-block` joins a split `$$` formula in each embedded file too, also in a file that an
+/// embedded file embeds, wherever the action is listed.
+#[test]
+fn test_process_embed_join_math_block() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    fs::write(
+        dir.path().join("sub.md"),
+        "$$\nc\n\nd\n$$\n\n![](inner.md)\n",
+    )?;
+    fs::write(dir.path().join("inner.md"), "$$\ne\n\nf\n$$\n")?;
+    let input = dir.path().join("post.md");
+    fs::write(&input, "$$\na\n\nb\n$$\n\n![](sub.md)\n")?;
+    let output = dir.path().join("out/post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "embed-markdown"])
+        .args(["--action", "join-math-block", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let expected_markdown = "$$\na\nb\n$$\n\n$$\nc\nd\n$$\n\n$$\ne\nf\n$$\n";
+    assert_eq!(markdown, expected_markdown);
+    Ok(())
+}
+
 /// `xpmd process --action math-inline-to-text` replaces an inline formula with Unicode text.
 #[test]
 fn test_process_math_inline_to_text() -> Result<()> {
