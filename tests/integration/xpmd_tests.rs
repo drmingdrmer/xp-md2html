@@ -227,6 +227,46 @@ fn test_render_without_chrome() -> Result<()> {
     dir.close()
 }
 
+/// A Chrome that runs longer than `XPMD_TIMEOUT` seconds is killed, and the render fails with the
+/// limit. This Chrome is a script that sleeps.
+#[test]
+#[cfg(unix)]
+fn test_render_kills_hanging_chrome() -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let dir = TestDir::new()?;
+    let chrome = dir.path().join("sleeping-chrome");
+    fs::write(&chrome, "#!/bin/sh\nexec sleep 30\n")?;
+    let mut permissions = fs::metadata(&chrome)?.permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&chrome, permissions)?;
+    let start = Instant::now();
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["render-markup", "-i"])
+        .arg(root_dir.join("tests/fixtures/simple.html"))
+        .arg("-o")
+        .arg(dir.path().join("simple.png"))
+        .env("XPMD_CHROME", &chrome)
+        .env("XPMD_TIMEOUT", "1")
+        // CI sets RUST_BACKTRACE, which would add a backtrace to the error.
+        .env_remove("RUST_BACKTRACE")
+        .env_remove("RUST_LIB_BACKTRACE")
+        .output_bounded()?;
+
+    let elapsed = start.elapsed();
+    assert!(elapsed < Duration::from_secs(20), "{elapsed:?}");
+    let succeeded = result.status.success();
+    assert!(!succeeded);
+
+    let stderr = String::from_utf8(result.stderr)?;
+    let last_line = stderr.lines().last();
+    let expected_last_line = "    Killed it after 1s; XPMD_TIMEOUT sets the limit in seconds";
+    assert_eq!(last_line, Some(expected_last_line));
+    dir.close()
+}
+
 /// A failed run is an error that names the command, with its exit status and its stderr.
 #[test]
 fn test_output_ok_fails() -> Result<()> {

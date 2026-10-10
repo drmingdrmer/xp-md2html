@@ -1,11 +1,18 @@
 use std::cell::OnceCell;
 use std::fs;
+use std::io;
+use std::io::Read;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::Output;
+use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::OnceLock;
+use std::thread;
+use std::thread::JoinHandle;
+use std::time::Duration;
+use std::time::Instant;
 
 use anyhow::Context;
 use tempfile::TempDir;
@@ -33,6 +40,15 @@ const CHROME_ENV: &str = "XPMD_CHROME";
 /// The environment variable that names ImageMagick, as a path or a command in `PATH`, instead of
 /// the lookup.
 const MAGICK_ENV: &str = "XPMD_MAGICK";
+
+/// The environment variable that gives the seconds that one run of Chrome or ImageMagick may take.
+const TIMEOUT_ENV: &str = "XPMD_TIMEOUT";
+
+/// How long one run of Chrome or ImageMagick may take, unless `XPMD_TIMEOUT` gives other seconds.
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// How often a run checks whether its tool has exited.
+const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 /// The context of the error when ImageMagick is missing, which only a PNG or a JPEG needs.
 const MAGICK_HELP: &str = "Failed to trim the image. Make sure ImageMagick is installed and accessible; an SVG or a PDF does not need it.\n\
@@ -102,6 +118,8 @@ pub struct ChromeRenderer {
     /// ImageMagick command: `magick`, or the older `convert`; the first trim looks for it, for this
     /// renderer and every one that [`ChromeRenderer::with_window`] makes from it
     magick: Arc<OnceLock<String>>,
+    /// How long one run of Chrome or ImageMagick may take before it is killed
+    timeout: Duration,
 }
 
 impl ChromeRenderer {
@@ -109,18 +127,21 @@ impl ChromeRenderer {
     /// which the first one looks for.
     pub fn new(config: RenderConfig) -> anyhow::Result<Self> {
         let chrome = Self::find_chrome_executable().context(CHROME_HELP)?;
+        let timeout = configured_timeout()?;
 
         Ok(Self {
             config,
             chrome,
             magick: Arc::default(),
+            timeout,
         })
     }
 
     /// Render content that is renderable in chrome to image.
     /// Such as html, svg etc into image.
     /// It uses a headless chrome browser via direct command execution.
-    /// It blocks the calling thread until Chrome and ImageMagick exit.
+    /// It blocks the calling thread until Chrome and ImageMagick exit, or until one of them passes
+    /// its time limit and is killed.
     ///
     /// # Arguments
     ///
@@ -171,6 +192,7 @@ impl ChromeRenderer {
             config,
             chrome: self.chrome.clone(),
             magick: self.magick.clone(),
+            timeout: self.timeout,
         }
     }
 
@@ -213,7 +235,7 @@ impl ChromeRenderer {
         cmd.current_dir(cwd);
 
         // Chrome's stderr is noise, unless Chrome fails.
-        let chrome_output = cmd.output().context(mes.clone())?;
+        let chrome_output = output_within(&mut cmd, self.timeout).context(mes.clone())?;
 
         if !chrome_output.status.success() {
             let stderr = String::from_utf8_lossy(&chrome_output.stderr);
@@ -372,8 +394,7 @@ impl ChromeRenderer {
         let magick = self.magick()?;
         let mut cmd = self.build_trim_image_cmd(magick, screenshot_path);
 
-        let output = cmd
-            .output()
+        let output = output_within(&mut cmd, self.timeout)
             .context(format!("Failed to execute ImageMagick convert: {:?}", cmd))?;
 
         if !output.status.success() {
@@ -505,14 +526,84 @@ impl ChromeRenderer {
 /// The command that the environment variable `name`, such as `XPMD_CHROME`, names, once `which`
 /// finds it; None when the variable is not set.
 fn configured_tool(name: &str) -> anyhow::Result<Option<String>> {
-    let tool = match std::env::var(name) {
-        Ok(tool) => tool,
-        Err(std::env::VarError::NotPresent) => return Ok(None),
-        Err(error) => return Err(error).with_context(|| format!("Failed to read {name}")),
+    let Some(tool) = env_var(name)? else {
+        return Ok(None);
     };
     ChromeRenderer::find_available_command(&[tool.as_str()])
         .with_context(|| format!("{name} names no command: {tool}"))?;
     Ok(Some(tool))
+}
+
+/// How long one run of Chrome or ImageMagick may take: the seconds that `XPMD_TIMEOUT` gives, else
+/// [`DEFAULT_TIMEOUT`].
+fn configured_timeout() -> anyhow::Result<Duration> {
+    let Some(seconds) = env_var(TIMEOUT_ENV)? else {
+        return Ok(DEFAULT_TIMEOUT);
+    };
+    let seconds: u64 = seconds
+        .parse()
+        .with_context(|| format!("{TIMEOUT_ENV} is not a number of seconds: {seconds}"))?;
+    Ok(Duration::from_secs(seconds))
+}
+
+/// The value of the environment variable `name`; None when it is not set.
+fn env_var(name: &str) -> anyhow::Result<Option<String>> {
+    match std::env::var(name) {
+        Ok(value) => Ok(Some(value)),
+        Err(std::env::VarError::NotPresent) => Ok(None),
+        Err(error) => Err(error).with_context(|| format!("Failed to read {name}")),
+    }
+}
+
+/// Run `cmd` and return its output once it exits; kill it and fail when it runs longer than
+/// `timeout`. Two threads read its stdout and stderr while it runs, so a full pipe cannot stall it.
+fn output_within(cmd: &mut Command, timeout: Duration) -> anyhow::Result<Output> {
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn()?;
+    let stdout = child.stdout.take().context("The run has no stdout")?;
+    let stderr = child.stderr.take().context("The run has no stderr")?;
+    let stdout_reader = thread::spawn(move || read_all(stdout));
+    let stderr_reader = thread::spawn(move || read_all(stderr));
+
+    let start = Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait()? {
+            break status;
+        }
+        if start.elapsed() > timeout {
+            // A helper process of Chrome may keep a pipe open, so the readers are left to end alone.
+            child.kill()?;
+            child.wait()?;
+            anyhow::bail!("Killed it after {timeout:?}; {TIMEOUT_ENV} sets the limit in seconds");
+        }
+        thread::sleep(POLL_INTERVAL);
+    };
+
+    let stdout = join(stdout_reader)?;
+    let stderr = join(stderr_reader)?;
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+/// The bytes of `pipe` until the tool closes it.
+fn read_all(mut pipe: impl Read) -> io::Result<Vec<u8>> {
+    let mut data = Vec::new();
+    pipe.read_to_end(&mut data)?;
+    Ok(data)
+}
+
+/// The bytes that `reader`, a thread of [`read_all`], read.
+fn join(reader: JoinHandle<io::Result<Vec<u8>>>) -> anyhow::Result<Vec<u8>> {
+    let Ok(read) = reader.join() else {
+        anyhow::bail!("The thread that reads a pipe of the tool panicked");
+    };
+    let data = read?;
+    Ok(data)
 }
 
 /// A [`ChromeRenderer`] that looks for Chrome on its first use, and for ImageMagick on its first
@@ -665,6 +756,24 @@ mod tests {
         assert_eq!(message, expected);
     }
 
+    /// A tool that runs longer than its time is killed, and the run fails with the limit.
+    #[test]
+    fn test_output_within_kills() {
+        let mut cmd = Command::new("sleep");
+        cmd.arg("10");
+        let start = Instant::now();
+
+        let result = output_within(&mut cmd, Duration::from_millis(100));
+
+        let elapsed = start.elapsed();
+        assert!(elapsed < Duration::from_secs(5), "{elapsed:?}");
+        let message = result.unwrap_err().to_string();
+        assert_eq!(
+            message,
+            "Killed it after 100ms; XPMD_TIMEOUT sets the limit in seconds"
+        );
+    }
+
     /// A renderer whose Chrome is a path that names no file.
     fn renderer_without_chrome(width: u32, height: u32, scale: u32) -> ChromeRenderer {
         let config = RenderConfig {
@@ -679,6 +788,7 @@ mod tests {
             config,
             chrome: "/nonexistent/chrome".to_string(),
             magick: Arc::default(),
+            timeout: DEFAULT_TIMEOUT,
         }
     }
 }

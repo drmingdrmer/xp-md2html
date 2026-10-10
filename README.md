@@ -7,7 +7,7 @@ Convert HTML/SVG to images and PDFs using headless Chrome.
 - Chrome/Chromium browser
 - ImageMagick, for PNG and JPEG output: `brew install imagemagick` (macOS) or `sudo apt install imagemagick` (Linux)
 
-Set `XPMD_CHROME` or `XPMD_MAGICK` to a path, or to a command in `PATH`, to choose the Chrome or the ImageMagick that xpmd runs.
+Set `XPMD_CHROME` or `XPMD_MAGICK` to a path, or to a command in `PATH`, to choose the Chrome or the ImageMagick that xpmd runs. `XPMD_TIMEOUT` gives the seconds that one run of either may take before xpmd kills it [default: 60].
 
 ## Installation
 
