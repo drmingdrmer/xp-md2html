@@ -1420,6 +1420,71 @@ fn test_process_embed_reference_list() -> Result<()> {
     Ok(())
 }
 
+/// A file embedded in a block quote, and a file that it embeds, keep what each holds: links by
+/// their own definitions, their front matter and `--refs`; formulas that blank lines split; and
+/// image URLs, rebased to the input file's directory. The reference list at the end takes the
+/// definitions of every file.
+#[test]
+fn test_process_embed_nested() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let ref_file = dir.path().join("refs.yaml");
+    fs::write(
+        &ref_file,
+        "universal:\n  doc: https://example.invalid/doc\n",
+    )?;
+    fs::create_dir_all(dir.path().join("sub/inner"))?;
+    fs::write(
+        dir.path().join("sub/a.md"),
+        "A uses [spec] and ![x](img/x.png).\n\n\
+         $$\na\n\nb\n$$\n\n\
+         ![](inner/b.md)\n\n\
+         [spec]: https://example.invalid/spec \"Spec\"\n",
+    )?;
+    fs::write(
+        dir.path().join("sub/inner/b.md"),
+        "---\nrefs:\n  inner: https://example.invalid/inner\n---\n\n\
+         > B quotes [doc] and [inner].\n>\n> $$\n> c\n>\n> d\n> $$\n\n\
+         ![y](../y.png \"Y\")\n",
+    )?;
+    let input = dir.path().join("post.md");
+    fs::write(&input, "# Post\n\n> ![](sub/a.md)\n\nPost [doc].\n")?;
+    let output = dir.path().join("out/post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "embed-markdown"])
+        .args(["--action", "join-math-block"])
+        .args(["--action", "append-reference-list", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("--refs")
+        .arg(&ref_file)
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let expected_markdown = "# Post\n\n\
+        > A uses [spec](https://example.invalid/spec \"Spec\") and ![x](sub/img/x.png).\n\
+        > \n\
+        > $$\n> a\n> b\n> $$\n\
+        > \n\
+        > > B quotes [doc](https://example.invalid/doc) and \
+        [inner](https://example.invalid/inner).\n\
+        > > \n\
+        > > $$\n> > c\n> > d\n> > $$\n\
+        > \n\
+        > ![y](sub/y.png \"Y\")\n\n\
+        Post [doc](https://example.invalid/doc).\n\n\
+        Reference:\n\n\
+        - doc : <https://example.invalid/doc>\n\n\
+        - inner : <https://example.invalid/inner>\n\n\
+        - Spec : <https://example.invalid/spec>\n";
+    assert_eq!(markdown, expected_markdown);
+    Ok(())
+}
+
 /// Without `-i`, `-o` and `--action`, `xpmd process` reads stdin, and writes only the markdown,
 /// parsed and printed again, to stdout.
 #[test]
