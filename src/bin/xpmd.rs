@@ -21,7 +21,6 @@ use xp_md2html::process::ActionContext;
 use xp_md2html::render::chrome::ChromeRenderer;
 use xp_md2html::render::chrome::LazyRenderer;
 use xp_md2html::render::chrome::RenderConfig;
-use xp_md2html::render::chrome::INSTALL_HELP;
 use xp_md2html::render::code::code_to_html;
 use xp_md2html::render::code::load_theme;
 use xp_md2html::render::code::CodeStyle;
@@ -373,7 +372,7 @@ fn render_command(args: RenderArgs) -> Result<()> {
         scale,
         asset_base: base,
     };
-    let renderer = ChromeRenderer::new(config).context(INSTALL_HELP)?;
+    let renderer = ChromeRenderer::new(config)?;
     let image_data = renderer.render_markup(&content)?;
 
     write_output(output.as_deref(), &image_data)
@@ -424,7 +423,7 @@ fn render_math_command(args: RenderMathArgs) -> Result<()> {
         scale,
         asset_base: None,
     };
-    let renderer = ChromeRenderer::new(config).context(INSTALL_HELP)?;
+    let renderer = ChromeRenderer::new(config)?;
 
     let display = !inline;
     let data = if format == "svg" {
@@ -492,7 +491,7 @@ fn render_diagram_command(
         scale,
         asset_base: None,
     };
-    let renderer = ChromeRenderer::new(config).context(INSTALL_HELP)?;
+    let renderer = ChromeRenderer::new(config)?;
     let mut svg = to_svg(&renderer, &source)?;
     if format == "svg" {
         svg.push('\n');

@@ -1514,9 +1514,10 @@ fn test_process_without_renderer() -> Result<()> {
     Ok(())
 }
 
-/// Without Chrome and ImageMagick in PATH, an action that renders fails with the help to install
-/// them.
+/// Without Chrome in PATH, an action that renders fails with the help to install Chrome. macOS
+/// finds Chrome outside PATH, so the test cannot hide it there.
 #[test]
+#[cfg_attr(target_os = "macos", ignore = "macOS finds Chrome outside PATH")]
 fn test_process_renderer_missing() -> Result<()> {
     let dir = tempfile::tempdir()?;
     let empty_path = dir.path().join("bin");
@@ -1539,7 +1540,7 @@ fn test_process_renderer_missing() -> Result<()> {
     let stderr = String::from_utf8(result.stderr)?;
     let first_line = stderr.lines().next();
     let expected_first_line = "Error: Failed to render content. \
-                               Make sure Chrome/Chromium and ImageMagick are installed and accessible.";
+                               Make sure Chrome/Chromium is installed and accessible.";
     assert_eq!(first_line, Some(expected_first_line));
     Ok(())
 }

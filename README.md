@@ -5,7 +5,7 @@ Convert HTML/SVG to images and PDFs using headless Chrome.
 ## Prerequisites
 
 - Chrome/Chromium browser
-- ImageMagick: `brew install imagemagick` (macOS) or `sudo apt install imagemagick` (Linux)
+- ImageMagick, for PNG and JPEG output: `brew install imagemagick` (macOS) or `sudo apt install imagemagick` (Linux)
 
 ## Installation
 

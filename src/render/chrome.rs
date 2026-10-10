@@ -4,6 +4,8 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 use std::process::Output;
+use std::sync::Arc;
+use std::sync::OnceLock;
 
 use anyhow::Context;
 use tempfile::TempDir;
@@ -14,11 +16,15 @@ use crate::mime::Mime;
 /// between the timers are skipped, so the budget costs no real time.
 const VIRTUAL_TIME_BUDGET: &str = "--virtual-time-budget=5000";
 
-/// The context of the error when Chrome or ImageMagick is missing.
-pub const INSTALL_HELP: &str = "Failed to render content. Make sure Chrome/Chromium and ImageMagick are installed and accessible.\n\
+/// The context of the error when Chrome is missing.
+const CHROME_HELP: &str =
+    "Failed to render content. Make sure Chrome/Chromium is installed and accessible.\n\
     Chrome: On macOS: Install from https://www.google.com/chrome/\n\
     Chrome: On Linux: sudo apt install chromium-browser (Ubuntu/Debian) or equivalent\n\
-    Chrome: On Windows: Install from https://www.google.com/chrome/\n\
+    Chrome: On Windows: Install from https://www.google.com/chrome/";
+
+/// The context of the error when ImageMagick is missing, which only a PNG or a JPEG needs.
+const MAGICK_HELP: &str = "Failed to trim the image. Make sure ImageMagick is installed and accessible; an SVG or a PDF does not need it.\n\
     ImageMagick: On macOS: brew install imagemagick\n\
     ImageMagick: On Linux: sudo apt install imagemagick\n\
     ImageMagick: On Windows: Install from https://imagemagick.org/";
@@ -45,25 +51,21 @@ pub struct ChromeRenderer {
     config: RenderConfig,
     /// Chrome executable: a path, or a command name in `PATH`
     chrome: String,
-    /// ImageMagick command: `magick`, or the older `convert`
-    magick: String,
+    /// ImageMagick command: `magick`, or the older `convert`; the first trim looks for it, for this
+    /// renderer and every one that [`ChromeRenderer::with_window`] makes from it
+    magick: Arc<OnceLock<String>>,
 }
 
 impl ChromeRenderer {
-    /// Find Chrome and ImageMagick once, for every render with `config`.
+    /// Find Chrome once, for every render with `config`; a PNG or a JPEG also needs ImageMagick,
+    /// which the first one looks for.
     pub fn new(config: RenderConfig) -> anyhow::Result<Self> {
-        let chrome = Self::find_chrome_executable()?;
-
-        // Find the first available `convert` command:
-        // ImageMagick's `convert` command is deprecated and replaced by `magick convert`
-        let commands = ["magick", "convert"];
-
-        let magick = Self::find_available_command(&commands)?;
+        let chrome = Self::find_chrome_executable().context(CHROME_HELP)?;
 
         Ok(Self {
             config,
             chrome,
-            magick,
+            magick: Arc::default(),
         })
     }
 
@@ -292,7 +294,8 @@ impl ChromeRenderer {
 
     /// Trim image using ImageMagick (matches Python logic)
     fn trim_image(&self, screenshot_path: &Path) -> anyhow::Result<Vec<u8>> {
-        let mut cmd = self.build_trim_image_cmd(screenshot_path);
+        let magick = self.magick()?;
+        let mut cmd = self.build_trim_image_cmd(magick, screenshot_path);
 
         let output = cmd
             .output()
@@ -304,6 +307,19 @@ impl ChromeRenderer {
         }
 
         Ok(output.stdout)
+    }
+
+    /// The ImageMagick command; the first call looks for it.
+    fn magick(&self) -> anyhow::Result<&str> {
+        if let Some(magick) = self.magick.get() {
+            return Ok(magick);
+        }
+        // Find the first available `convert` command:
+        // ImageMagick's `convert` command is deprecated and replaced by `magick convert`
+        let commands = ["magick", "convert"];
+        let found = Self::find_available_command(&commands).context(MAGICK_HELP)?;
+        let magick = self.magick.get_or_init(|| found);
+        Ok(magick)
     }
 
     /// Create a markup file for chrome to render
@@ -384,10 +400,10 @@ impl ChromeRenderer {
     }
 
     /// Build a ImageMagick command to trim image that output directly to stdout
-    fn build_trim_image_cmd(&self, screenshot_path: &Path) -> Command {
+    fn build_trim_image_cmd(&self, magick: &str, screenshot_path: &Path) -> Command {
         let output_type = self.config.output_type.as_str();
 
-        let mut cmd = Command::new(&self.magick);
+        let mut cmd = Command::new(magick);
         cmd.arg(screenshot_path).arg("-trim").arg("+repage");
 
         if output_type == "png" {
@@ -404,8 +420,8 @@ impl ChromeRenderer {
     }
 }
 
-/// A [`ChromeRenderer`] that looks for Chrome and ImageMagick on its first use, so a run that
-/// renders nothing needs neither.
+/// A [`ChromeRenderer`] that looks for Chrome on its first use, and for ImageMagick on its first
+/// trim, so a run that renders nothing needs neither.
 pub struct LazyRenderer {
     config: RenderConfig,
     renderer: OnceCell<ChromeRenderer>,
@@ -426,7 +442,7 @@ impl LazyRenderer {
             return Ok(renderer);
         }
         let config = self.config.clone();
-        let created = ChromeRenderer::new(config).context(INSTALL_HELP)?;
+        let created = ChromeRenderer::new(config)?;
         let renderer = self.renderer.get_or_init(|| created);
         Ok(renderer)
     }
