@@ -112,7 +112,7 @@ fn render(
     let renderer = ctx
         .renderer
         .get()?
-        .with_window_width(style.width + 2 * PAGE_PADDING);
+        .with_window_width(style.width.saturating_add(2 * PAGE_PADDING));
     let png = renderer.render_markup(&page)?;
 
     let markdown = format!("```{}\n{}```\n", lang.unwrap_or(""), code);

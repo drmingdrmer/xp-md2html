@@ -74,7 +74,10 @@ pub fn math_to_image(
     let page = math_page(tex, display);
     let dom = renderer.dump_dom(&page)?;
     let (right, bottom) = formula_edges(&dom)?;
-    let fitted = renderer.with_window(right + PADDING, bottom + PADDING);
+    let fitted = renderer.with_window(
+        right.saturating_add(PADDING),
+        bottom.saturating_add(PADDING),
+    );
     fitted.render_markup(&page)
 }
 

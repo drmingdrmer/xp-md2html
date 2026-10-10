@@ -16,6 +16,9 @@ use crate::mime::Mime;
 /// between the timers are skipped, so the budget costs no real time.
 const VIRTUAL_TIME_BUDGET: &str = "--virtual-time-budget=5000";
 
+/// The most device pixels, a window side times the scale, that Chrome keeps in the `int` of a size.
+const MAX_DEVICE_PIXELS: u64 = i32::MAX as u64;
+
 /// The context of the error when Chrome is missing.
 const CHROME_HELP: &str =
     "Failed to render content. Make sure Chrome/Chromium is installed and accessible.\n\
@@ -147,6 +150,8 @@ impl ChromeRenderer {
 
     /// Write `input` into `cwd`, run Chrome on it with the `capture` flags, and return Chrome's output once it exits.
     fn run_chrome(&self, cwd: &Path, input: &str, capture: &[&str]) -> anyhow::Result<Output> {
+        self.check_window()?;
+
         let mime = &self.config.mime;
         let asset_base = self.config.asset_base.as_deref();
         let input_file_path = Self::create_markup_file(cwd, input, mime, asset_base)?;
@@ -176,6 +181,27 @@ impl ChromeRenderer {
         }
 
         Ok(chrome_output)
+    }
+
+    /// Fail unless Chrome can take the window: each side and the scale are at least 1, and each
+    /// side times the scale is at most [`MAX_DEVICE_PIXELS`]. A side that a `saturating_add` of the
+    /// padding left at `u32::MAX` fails too.
+    fn check_window(&self) -> anyhow::Result<()> {
+        let width = self.config.width;
+        let height = self.config.height;
+        let scale = self.config.scale;
+
+        let is_empty = width == 0 || height == 0 || scale == 0;
+        let longest_side = width.max(height);
+        let device_pixels = u64::from(longest_side) * u64::from(scale);
+        let is_too_large = device_pixels > MAX_DEVICE_PIXELS;
+        if is_empty || is_too_large {
+            anyhow::bail!(
+                "Unsupported window of {width}x{height} pixels at scale {scale}: each side and the \
+                 scale must be at least 1, and each side times the scale at most {MAX_DEVICE_PIXELS}"
+            );
+        }
+        Ok(())
     }
 
     /// Setup html context, such as encoding and url base
@@ -519,4 +545,71 @@ mod tests {
     }
 
     // Note: Integration tests require Chrome and ImageMagick to be installed
+
+    /// A window side or the scale of 0, or a side times the scale past `i32::MAX`, is an error.
+    #[test]
+    fn test_check_window() {
+        let accepted = [(800, 600, 2), (1, 2147483647, 1), (1073741823, 1, 2)];
+        for (width, height, scale) in accepted {
+            let renderer = renderer_without_chrome(width, height, scale);
+            let checked = renderer.check_window();
+            assert!(
+                checked.is_ok(),
+                "{width}x{height} at scale {scale}: {checked:?}"
+            );
+        }
+
+        let rejected = [
+            (0, 600, 2),
+            (800, 0, 2),
+            (800, 600, 0),
+            (1, 2147483648, 1),
+            (1073741824, 1, 2),
+            (4294967295, 1, 1),
+        ];
+        for (width, height, scale) in rejected {
+            let renderer = renderer_without_chrome(width, height, scale);
+            let checked = renderer.check_window();
+            let message = checked.unwrap_err().to_string();
+            let expected = format!(
+                "Unsupported window of {width}x{height} pixels at scale {scale}: each side and \
+                 the scale must be at least 1, and each side times the scale at most 2147483647"
+            );
+            assert_eq!(message, expected);
+        }
+    }
+
+    /// A render with a window that Chrome cannot take fails before Chrome runs: this renderer has no
+    /// Chrome to run.
+    #[test]
+    fn test_render_checks_window_first() {
+        let renderer = renderer_without_chrome(800, 0, 2);
+        let expected = "Unsupported window of 800x0 pixels at scale 2: each side and the scale \
+                        must be at least 1, and each side times the scale at most 2147483647";
+
+        let rendered = renderer.render_markup("<p>a</p>");
+        let message = rendered.unwrap_err().to_string();
+        assert_eq!(message, expected);
+
+        let dumped = renderer.dump_dom("<p>a</p>");
+        let message = dumped.unwrap_err().to_string();
+        assert_eq!(message, expected);
+    }
+
+    /// A renderer whose Chrome is a path that names no file.
+    fn renderer_without_chrome(width: u32, height: u32, scale: u32) -> ChromeRenderer {
+        let config = RenderConfig {
+            mime: "text/html".to_string(),
+            output_type: "png".to_string(),
+            width,
+            height,
+            scale,
+            asset_base: None,
+        };
+        ChromeRenderer {
+            config,
+            chrome: "/nonexistent/chrome".to_string(),
+            magick: Arc::default(),
+        }
+    }
 }

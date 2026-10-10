@@ -29,7 +29,10 @@ pub fn svg_page(svg: &str) -> String {
 /// fixed window would cut a wide diagram off.
 pub fn svg_to_image(renderer: &ChromeRenderer, svg: &str) -> anyhow::Result<Vec<u8>> {
     let (width, height) = svg_size(svg)?;
-    let fitted = renderer.with_window(width + 2 * PADDING, height + 2 * PADDING);
+    let fitted = renderer.with_window(
+        width.saturating_add(2 * PADDING),
+        height.saturating_add(2 * PADDING),
+    );
     fitted.render_markup(&svg_page(svg))
 }
 

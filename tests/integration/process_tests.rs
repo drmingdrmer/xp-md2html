@@ -347,6 +347,38 @@ fn test_process_code_to_image() -> Result<()> {
     Ok(())
 }
 
+/// `xpmd process --action code-to-image=4294967295` fails with an error instead of a panic: the
+/// width plus the page padding passes `u32::MAX`, a window that Chrome cannot take.
+#[test]
+fn test_process_code_to_image_too_wide() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let input = dir.path().join("post.md");
+    fs::write(&input, "```\ncode\n```\n")?;
+    let output = dir.path().join("out.md");
+    let assets = dir.path().join("assets");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "code-to-image=4294967295", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("--assets")
+        .arg(&assets)
+        // CI sets RUST_BACKTRACE, which would add a backtrace to the error.
+        .env_remove("RUST_BACKTRACE")
+        .env_remove("RUST_LIB_BACKTRACE")
+        .output()?;
+
+    assert_eq!(result.status.code(), Some(1));
+
+    let stderr = String::from_utf8(result.stderr)?;
+    let expected_stderr = "Error: Unsupported window of 4294967295x2000 pixels at scale 2: each \
+                           side and the scale must be at least 1, and each side times the scale \
+                           at most 2147483647\n";
+    assert_eq!(stderr, expected_stderr);
+    Ok(())
+}
+
 /// `xpmd process --action math-to-image` replaces inline math with an inline image, and a `$$`
 /// formula or a ```` ```math ```` block with a paragraph that holds one image.
 #[test]
