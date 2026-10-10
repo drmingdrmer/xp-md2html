@@ -6,6 +6,10 @@ use std::process::Stdio;
 
 use anyhow::Result;
 
+use super::process_tests::count_pixels;
+use super::process_tests::RED;
+use super::process_tests::RED_SVG;
+
 /// Every JPEG file starts with these bytes.
 const JPEG_MAGIC: [u8; 3] = [0xFF, 0xD8, 0xFF];
 
@@ -62,6 +66,40 @@ fn test_render_takes_format_from_output_extension() -> Result<()> {
     let data = fs::read(&output)?;
     let magic = data.get(..JPEG_MAGIC.len());
     assert_eq!(magic, Some(JPEG_MAGIC.as_slice()));
+    Ok(())
+}
+
+/// `render-markup` draws each CSS pixel as 2x2 pixels by default, and as 3x3 with `--scale 3`: the
+/// PNG of the 40 by 30 red SVG is red all over.
+#[test]
+fn test_render_scale() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let input = dir.path().join("red.svg");
+    fs::write(&input, RED_SVG)?;
+    let output = dir.path().join("red.png");
+
+    // The scale arguments, the size of the PNG, and how many of its pixels are red.
+    let cases = [
+        (vec![], (80, 60), 80 * 60),
+        (vec!["--scale", "3"], (120, 90), 120 * 90),
+    ];
+    for (scale_args, expected_size, expected_red) in cases {
+        let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+            .args(["render-markup", "-i"])
+            .arg(&input)
+            .arg("-o")
+            .arg(&output)
+            .args(scale_args)
+            .output()?;
+
+        let stderr = String::from_utf8(result.stderr)?;
+        assert_eq!(stderr, "");
+
+        let size = image::image_dimensions(&output)?;
+        assert_eq!(size, expected_size);
+        let red = count_pixels(&output, RED)?;
+        assert_eq!(red, expected_red);
+    }
     Ok(())
 }
 

@@ -21,7 +21,7 @@ use sha2::Sha256;
 const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
 
 /// A red image of 40 by 30 pixels.
-const RED_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="30"><rect width="40" height="30" fill="red"/></svg>"#;
+pub(crate) const RED_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="30"><rect width="40" height="30" fill="red"/></svg>"#;
 pub(crate) const RED: Rgba<u8> = Rgba([255, 0, 0, 255]);
 
 /// How long the server of `serve_once` waits for a request, and then for each read.
@@ -86,7 +86,7 @@ fn test_process_table_to_image_input_images() -> Result<()> {
     let output = output_dir.join("post.md");
 
     let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
-        .args(["process", "--action", "table-to-image", "--scale", "1"])
+        .args(["process", "--action", "table-to-image"])
         .arg("-i")
         .arg(&input)
         .arg("-o")
@@ -99,12 +99,12 @@ fn test_process_table_to_image_input_images() -> Result<()> {
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(markdown, "![](post-table-d295bbb3e858.png)\n");
 
-    // At scale 1, the PNG holds every pixel of each image.
+    // At the default scale 2, the PNG holds 2x2 pixels for each pixel of each image.
     let png = output_dir.join("post-table-d295bbb3e858.png");
     let red = count_pixels(&png, RED)?;
-    assert_eq!(red, 40 * 30);
+    assert_eq!(red, 80 * 60);
     let blue = count_pixels(&png, BLUE)?;
-    assert_eq!(blue, 20 * 10);
+    assert_eq!(blue, 40 * 20);
     Ok(())
 }
 

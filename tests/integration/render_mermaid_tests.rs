@@ -4,6 +4,10 @@ use std::process::Command;
 
 use anyhow::Result;
 
+use super::process_tests::count_pixels;
+use super::process_tests::BLUE;
+use super::process_tests::RED;
+
 /// Every PNG file starts with these bytes.
 const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
 
@@ -47,6 +51,55 @@ fn test_render_mermaid_svg_and_png() -> Result<()> {
     let png = fs::read(&output)?;
     let magic = png.get(..PNG_MAGIC.len());
     assert_eq!(magic, Some(PNG_MAGIC.as_slice()));
+    Ok(())
+}
+
+/// A chart wider or taller than the window of the DOM dump, 1000 by 2000 CSS pixels, keeps its
+/// size and both ends: at the default scale 2, the long side of the PNG passes twice the window,
+/// and the PNG holds the blue node at the start and the red node at the end. The window of the
+/// dump would shrink the wide chart, whose `width` is `100%`, and cut the tall one off.
+///
+/// Mermaid sizes a node by its font, so the sizes and counts are not exact.
+#[test]
+fn test_render_mermaid_wide_and_tall() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    // Each case ends with the window's side in pixels at scale 2. 10 nodes in a row are about 1900
+    // CSS pixels wide, and 36 in a column about 3000 tall.
+    let cases = [("wide", "LR", 10, 2000), ("tall", "TB", 36, 4000)];
+    for (name, direction, node_count, window_side) in cases {
+        let nodes: Vec<String> = (0..node_count).map(|i| format!("n{i}")).collect();
+        let chain = nodes.join(" --> ");
+        let last = node_count - 1;
+        let chart = format!(
+            "graph {direction}\n    {chain}\n    \
+             style n0 fill:#0000ff,stroke:#0000ff\n    \
+             style n{last} fill:#ff0000,stroke:#ff0000\n"
+        );
+        let input = dir.path().join(format!("{name}.mmd"));
+        fs::write(&input, chart)?;
+        let output = dir.path().join(format!("{name}.png"));
+
+        let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+            .args(["render-mermaid", "-i"])
+            .arg(&input)
+            .arg("-o")
+            .arg(&output)
+            .output()?;
+
+        let stderr = String::from_utf8(result.stderr)?;
+        assert_eq!(stderr, "");
+
+        let (width, height) = image::image_dimensions(&output)?;
+        let long_side = width.max(height);
+        assert!(
+            long_side > window_side,
+            "the {name} chart shrank to {width}x{height}"
+        );
+        let blue = count_pixels(&output, BLUE)?;
+        assert!(blue > 0, "the {name} chart lost its start");
+        let red = count_pixels(&output, RED)?;
+        assert!(red > 0, "the {name} chart lost its end");
+    }
     Ok(())
 }
 
