@@ -1,3 +1,4 @@
+use std::cell::OnceCell;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -12,6 +13,15 @@ use crate::mime::Mime;
 /// The page time, in milliseconds, that a DOM dump gives the page's timers at most; the waits
 /// between the timers are skipped, so the budget costs no real time.
 const VIRTUAL_TIME_BUDGET: &str = "--virtual-time-budget=5000";
+
+/// The context of the error when Chrome or ImageMagick is missing.
+pub const INSTALL_HELP: &str = "Failed to render content. Make sure Chrome/Chromium and ImageMagick are installed and accessible.\n\
+    Chrome: On macOS: Install from https://www.google.com/chrome/\n\
+    Chrome: On Linux: sudo apt install chromium-browser (Ubuntu/Debian) or equivalent\n\
+    Chrome: On Windows: Install from https://www.google.com/chrome/\n\
+    ImageMagick: On macOS: brew install imagemagick\n\
+    ImageMagick: On Linux: sudo apt install imagemagick\n\
+    ImageMagick: On Windows: Install from https://imagemagick.org/";
 
 /// Settings that every render of one [`ChromeRenderer`] uses.
 #[derive(Clone)]
@@ -391,6 +401,34 @@ impl ChromeRenderer {
         cmd.arg(format!("{}:-", output_type));
 
         cmd
+    }
+}
+
+/// A [`ChromeRenderer`] that looks for Chrome and ImageMagick on its first use, so a run that
+/// renders nothing needs neither.
+pub struct LazyRenderer {
+    config: RenderConfig,
+    renderer: OnceCell<ChromeRenderer>,
+}
+
+impl LazyRenderer {
+    /// A renderer for every render with `config`; [`LazyRenderer::get`] creates it.
+    pub fn new(config: RenderConfig) -> Self {
+        Self {
+            config,
+            renderer: OnceCell::new(),
+        }
+    }
+
+    /// The renderer; the first call creates it.
+    pub fn get(&self) -> anyhow::Result<&ChromeRenderer> {
+        if let Some(renderer) = self.renderer.get() {
+            return Ok(renderer);
+        }
+        let config = self.config.clone();
+        let created = ChromeRenderer::new(config).context(INSTALL_HELP)?;
+        let renderer = self.renderer.get_or_init(|| created);
+        Ok(renderer)
     }
 }
 

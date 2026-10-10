@@ -36,7 +36,7 @@ use fancy_regex::Regex;
 
 use crate::process::refs::Refs;
 use crate::process::rewrite_urls::UrlRewrite;
-use crate::render::chrome::ChromeRenderer;
+use crate::render::chrome::LazyRenderer;
 use crate::render::math_img::MathService;
 use crate::render::math_img::SERVICE_NAMES;
 
@@ -59,7 +59,7 @@ pub struct ActionContext {
     /// them matches somewhere in its URL.
     pub embed_patterns: Vec<Regex>,
     /// Renders an HTML page to a PNG.
-    pub renderer: ChromeRenderer,
+    pub renderer: LazyRenderer,
 }
 
 impl ActionContext {

@@ -78,7 +78,8 @@ fn render(table: Node<'_>, ctx: &ActionContext) -> anyhow::Result<String> {
     comrak::format_html(table, &options, &mut html)?;
 
     let page = format!("{PAGE_HEAD}{html}{PAGE_TAIL}");
-    let png = ctx.renderer.render_markup(&page)?;
+    let renderer = ctx.renderer.get()?;
+    let png = renderer.render_markup(&page)?;
 
     let digest = Sha256::digest(markdown.as_bytes());
     let hash = format!("{digest:x}");

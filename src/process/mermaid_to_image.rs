@@ -73,8 +73,9 @@ pub(crate) fn render(
     to_svg: fn(&ChromeRenderer, &str) -> anyhow::Result<String>,
     ctx: &ActionContext,
 ) -> anyhow::Result<String> {
-    let svg = to_svg(&ctx.renderer, source)?;
-    let png = svg_to_image(&ctx.renderer, &svg)?;
+    let renderer = ctx.renderer.get()?;
+    let svg = to_svg(renderer, source)?;
+    let png = svg_to_image(renderer, &svg)?;
 
     let digest = Sha256::digest(source.as_bytes());
     let hash = format!("{digest:x}");

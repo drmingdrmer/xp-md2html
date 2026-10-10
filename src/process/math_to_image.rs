@@ -88,7 +88,8 @@ fn formula_of(node: Node<'_>) -> Option<(String, bool)> {
 /// Render `tex`, in the display style when `display` is set, to a PNG in `ctx.assets_dir` and
 /// return the link to the PNG.
 fn render(tex: &str, display: bool, ctx: &ActionContext) -> anyhow::Result<String> {
-    let png = ctx.renderer.render_markup(&math_page(tex, display))?;
+    let renderer = ctx.renderer.get()?;
+    let png = renderer.render_markup(&math_page(tex, display))?;
 
     // The display style draws some formulas bigger, so the name hashes the delimiters too.
     let markdown = if display {

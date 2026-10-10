@@ -111,6 +111,7 @@ fn render(
     // A window narrower than the `<pre>` would wrap the lines before `style.width`.
     let renderer = ctx
         .renderer
+        .get()?
         .with_window_width(style.width + 2 * PAGE_PADDING);
     let png = renderer.render_markup(&page)?;
 

@@ -18,7 +18,9 @@ use xp_md2html::process::relative_url;
 use xp_md2html::process::Action;
 use xp_md2html::process::ActionContext;
 use xp_md2html::render::chrome::ChromeRenderer;
+use xp_md2html::render::chrome::LazyRenderer;
 use xp_md2html::render::chrome::RenderConfig;
+use xp_md2html::render::chrome::INSTALL_HELP;
 use xp_md2html::render::code::code_to_html;
 use xp_md2html::render::code::load_theme;
 use xp_md2html::render::code::CodeStyle;
@@ -273,15 +275,6 @@ struct RenderMarkdownArgs {
 /// The window that a formula is rendered in; the trim cuts the image down to the formula.
 const MATH_WINDOW_WIDTH: u32 = 1000;
 const MATH_WINDOW_HEIGHT: u32 = 2000;
-
-/// The context of the error when Chrome or ImageMagick is missing.
-const INSTALL_HELP: &str = "Failed to render content. Make sure Chrome/Chromium and ImageMagick are installed and accessible.\n\
-    Chrome: On macOS: Install from https://www.google.com/chrome/\n\
-    Chrome: On Linux: sudo apt install chromium-browser (Ubuntu/Debian) or equivalent\n\
-    Chrome: On Windows: Install from https://www.google.com/chrome/\n\
-    ImageMagick: On macOS: brew install imagemagick\n\
-    ImageMagick: On Linux: sudo apt install imagemagick\n\
-    ImageMagick: On Windows: Install from https://imagemagick.org/";
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -639,7 +632,7 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         scale,
         asset_base: None,
     };
-    let renderer = ChromeRenderer::new(config).context(INSTALL_HELP)?;
+    let renderer = LazyRenderer::new(config);
     let ctx = ActionContext {
         input_dir,
         assets_dir,

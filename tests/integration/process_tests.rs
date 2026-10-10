@@ -1032,3 +1032,69 @@ fn test_process_file_to_stdout() -> Result<()> {
     assert_eq!(magic, Some(PNG_MAGIC.as_slice()));
     Ok(())
 }
+
+/// `xpmd process` looks for Chrome and ImageMagick only when an action renders something: with
+/// neither in PATH, a run without actions, or whose actions render nothing, still works.
+#[test]
+fn test_process_without_renderer() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let empty_path = dir.path().join("bin");
+    fs::create_dir_all(&empty_path)?;
+    let input = dir.path().join("post.md");
+    fs::write(&input, "_a_ `b`\n")?;
+    let output = dir.path().join("out/post.md");
+
+    // The `--action` arguments, and the markdown that they give.
+    let cases = [
+        (vec![], "*a* `b`\n"),
+        (vec!["--action", "codespan-to-text"], "*a* b\n"),
+        (vec!["--action", "table-to-image"], "*a* `b`\n"),
+    ];
+    for (action_args, expected_markdown) in cases {
+        let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+            .args(["process", "-i"])
+            .arg(&input)
+            .arg("-o")
+            .arg(&output)
+            .args(action_args)
+            .env("PATH", &empty_path)
+            .output()?;
+
+        let stderr = String::from_utf8(result.stderr)?;
+        assert_eq!(stderr, "");
+
+        let markdown = fs::read_to_string(&output)?;
+        assert_eq!(markdown, expected_markdown);
+    }
+    Ok(())
+}
+
+/// Without Chrome and ImageMagick in PATH, an action that renders fails with the help to install
+/// them.
+#[test]
+fn test_process_renderer_missing() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let empty_path = dir.path().join("bin");
+    fs::create_dir_all(&empty_path)?;
+    let input = dir.path().join("post.md");
+    fs::write(&input, "| x |\n|---|\n| 1 |\n")?;
+    let output = dir.path().join("out/post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "table-to-image", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .env("PATH", &empty_path)
+        .output()?;
+
+    let succeeded = result.status.success();
+    assert!(!succeeded);
+
+    let stderr = String::from_utf8(result.stderr)?;
+    let first_line = stderr.lines().next();
+    let expected_first_line = "Error: Failed to render content. \
+                               Make sure Chrome/Chromium and ImageMagick are installed and accessible.";
+    assert_eq!(first_line, Some(expected_first_line));
+    Ok(())
+}
