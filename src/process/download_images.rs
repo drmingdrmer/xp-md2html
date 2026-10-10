@@ -98,10 +98,15 @@ fn fetch(url: &str) -> anyhow::Result<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
+    use std::io;
     use std::io::Read;
     use std::io::Write;
     use std::net::TcpListener;
+    use std::net::TcpStream;
     use std::thread;
+    use std::thread::JoinHandle;
+    use std::time::Duration;
+    use std::time::Instant;
 
     use super::*;
 
@@ -146,26 +151,77 @@ mod tests {
         assert_eq!(name, "8ad5e0279553");
     }
 
-    /// Answer the first connection with `status_line` and `body`, then close the listener.
-    fn serve_once(status_line: &'static str, body: &'static [u8]) -> anyhow::Result<u16> {
+    /// How long the server of `serve_once` waits for a request, and then for each read.
+    const SERVER_WAIT: Duration = Duration::from_secs(10);
+
+    /// Answer the first connection with `status_line` and `body`, then close the listener. Return
+    /// the port and the server thread, which returns the request line, or an error when no request
+    /// comes within `SERVER_WAIT` or the client closes the connection before the request ends.
+    fn serve_once(
+        status_line: &'static str,
+        body: &'static [u8],
+    ) -> anyhow::Result<(u16, JoinHandle<anyhow::Result<String>>)> {
         let listener = TcpListener::bind("127.0.0.1:0")?;
         let port = listener.local_addr()?.port();
-        thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
+        // A non-blocking accept lets the thread give up when no request comes.
+        listener.set_nonblocking(true)?;
+
+        let server = thread::spawn(move || -> anyhow::Result<String> {
+            let start = Instant::now();
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                        if start.elapsed() > SERVER_WAIT {
+                            anyhow::bail!("No request came within {SERVER_WAIT:?}");
+                        }
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(error) => return Err(error.into()),
+                }
+            };
+            stream.set_nonblocking(false)?;
+            stream.set_read_timeout(Some(SERVER_WAIT))?;
+
             let mut request = Vec::new();
             let mut chunk = [0u8; 1024];
             while !request.ends_with(b"\r\n\r\n") {
-                let n = stream.read(&mut chunk).unwrap();
+                let n = stream.read(&mut chunk)?;
+                if n == 0 {
+                    anyhow::bail!("The client closed the connection before the request ended");
+                }
                 request.extend_from_slice(&chunk[..n]);
             }
             let head = format!(
                 "{status_line}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
                 body.len()
             );
-            stream.write_all(head.as_bytes()).unwrap();
-            stream.write_all(body).unwrap();
+            stream.write_all(head.as_bytes())?;
+            stream.write_all(body)?;
+
+            let request = String::from_utf8(request)?;
+            let request_line = request.lines().next().unwrap_or_default();
+            Ok(request_line.to_string())
         });
-        Ok(port)
+        Ok((port, server))
+    }
+
+    /// The server fails, instead of reading forever, when the client closes the connection before
+    /// the request ends.
+    #[test]
+    fn test_serve_once_premature_eof() -> anyhow::Result<()> {
+        let (port, server) = serve_once("HTTP/1.1 200 OK", b"")?;
+        let mut stream = TcpStream::connect(("127.0.0.1", port))?;
+        stream.write_all(b"GET / HTTP/1.1\r\n")?;
+        drop(stream);
+
+        let result = server.join().unwrap();
+        let message = format!("{:#}", result.unwrap_err());
+        assert_eq!(
+            message,
+            "The client closed the connection before the request ended"
+        );
+        Ok(())
     }
 
     /// The first download writes the file; the second finds it and does not connect.
@@ -175,11 +231,14 @@ mod tests {
         let assets_dir = dir.path().join("assets");
         fs::create_dir(&assets_dir)?;
 
-        let port = serve_once("HTTP/1.1 200 OK", b"PNGDATA")?;
+        let (port, server) = serve_once("HTTP/1.1 200 OK", b"PNGDATA")?;
         let url = format!("http://127.0.0.1:{port}/img/a.png?x=1");
         let name = file_name(&url);
 
-        let path = download(&url, &assets_dir)?;
+        let result = download(&url, &assets_dir);
+        let request_line = server.join().unwrap()?;
+        assert_eq!(request_line, "GET /img/a.png?x=1 HTTP/1.1");
+        let path = result?;
         assert_eq!(path, assets_dir.join(&name));
         let content = fs::read(&path)?;
         assert_eq!(content, b"PNGDATA");
@@ -194,10 +253,12 @@ mod tests {
     fn test_download_status_error() -> anyhow::Result<()> {
         let dir = tempfile::tempdir()?;
 
-        let port = serve_once("HTTP/1.1 404 Not Found", b"")?;
+        let (port, server) = serve_once("HTTP/1.1 404 Not Found", b"")?;
         let url = format!("http://127.0.0.1:{port}/missing.png");
 
         let result = download(&url, dir.path());
+        let request_line = server.join().unwrap()?;
+        assert_eq!(request_line, "GET /missing.png HTTP/1.1");
         let message = format!("{:#}", result.unwrap_err());
         assert_eq!(
             message,
