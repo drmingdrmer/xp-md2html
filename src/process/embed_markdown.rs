@@ -113,16 +113,18 @@ fn embedded_url(node: Node<'_>, patterns: &[Regex]) -> anyhow::Result<Option<Str
     Ok(None)
 }
 
-/// `/x` is relative to `root_dir`, the input file's directory; any other path is relative to
-/// `base_dir`, the directory of the file that holds the link.
+/// The file that the local URL `url` names, by its path that [`super::url_path`] decodes: `/x` is
+/// relative to `root_dir`, the input file's directory; any other path is relative to `base_dir`,
+/// the directory of the file that holds the link.
 pub(super) fn resolve(root_dir: &Path, base_dir: &Path, url: &str) -> PathBuf {
     if let Some(from_root) = url.strip_prefix('/') {
-        return root_dir.join(from_root);
+        return root_dir.join(super::url_path(from_root));
     }
-    base_dir.join(url)
+    base_dir.join(super::url_path(url))
 }
 
-/// Make every relative image and link URL under `root`, which is relative to `from_dir`, relative to `to_dir`.
+/// Make every relative image and link URL under `root`, which is relative to `from_dir`, relative to `to_dir`;
+/// the query and the fragment stay.
 fn rebase_urls(root: Node<'_>, from_dir: &Path, to_dir: &Path) -> anyhow::Result<()> {
     for node in root.descendants() {
         let mut ast = node.data_mut();
@@ -134,8 +136,10 @@ fn rebase_urls(root: Node<'_>, from_dir: &Path, to_dir: &Path) -> anyhow::Result
         if !is_relative(&link.url) {
             continue;
         }
-        let target = from_dir.join(&link.url);
-        link.url = super::relative_url(to_dir, &target)?;
+        let target = from_dir.join(super::url_path(&link.url));
+        let path = super::relative_url(to_dir, &target)?;
+        let (_, suffix) = super::split_suffix(&link.url);
+        link.url = format!("{path}{suffix}");
     }
     Ok(())
 }
@@ -285,6 +289,31 @@ mod tests {
         let mut out = String::new();
         comrak::format_commonmark(root, &options, &mut out)?;
         assert_eq!(out, "A\n\nC\n\n![](b.md)\n");
+        Ok(())
+    }
+
+    /// The URL of an embedded file is decoded to find the file, and its relative URLs are decoded,
+    /// rebased and encoded again, keeping their query and fragment.
+    #[test]
+    fn test_embed_url_escapes() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        fs::create_dir(dir.path().join("my sub"))?;
+        fs::write(
+            dir.path().join("my sub/b 1.md"),
+            "![p](my%20pic.svg#icon) [c](<c d.md?x=1>) [e](%E5%9B%BE.md)\n",
+        )?;
+
+        let options = super::super::gfm_math_options();
+        let arena = Arena::new();
+        let root = comrak::parse_document(&arena, "![](my%20sub/b%201.md)\n", &options);
+
+        embed_md(&arena, root, dir.path())?;
+
+        let mut out = String::new();
+        comrak::format_commonmark(root, &options, &mut out)?;
+        let expected =
+            "![p](my%20sub/my%20pic.svg#icon) [c](my%20sub/c%20d.md?x=1) [e](my%20sub/图.md)\n";
+        assert_eq!(out, expected);
         Ok(())
     }
 

@@ -90,7 +90,8 @@ fn render(table: Node<'_>, ctx: &ActionContext) -> anyhow::Result<String> {
     ctx.link_to(&path)
 }
 
-/// The `file://` URL of the local file that each image under `table` names, by the image's URL.
+/// The `file://` URL of the local file that each image under `table` names, with the query and
+/// the fragment of the image's URL, by the image's URL.
 fn file_urls(table: Node<'_>, ctx: &ActionContext) -> anyhow::Result<HashMap<String, String>> {
     let mut urls = HashMap::new();
     for node in table.descendants() {
@@ -102,7 +103,8 @@ fn file_urls(table: Node<'_>, ctx: &ActionContext) -> anyhow::Result<HashMap<Str
             continue;
         };
         let file_url = ChromeRenderer::file_url(&file)?;
-        urls.insert(link.url.clone(), file_url);
+        let (_, suffix) = super::split_suffix(&link.url);
+        urls.insert(link.url.clone(), format!("{file_url}{suffix}"));
     }
     Ok(urls)
 }

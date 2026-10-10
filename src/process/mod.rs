@@ -88,28 +88,34 @@ impl ActionContext {
 
     /// Whether `url` is the link to an asset, a file that an action created or copied.
     pub fn is_asset(&self, url: &str) -> bool {
-        let key = with_scheme(url);
-        self.assets.borrow().contains_key(&key)
+        self.asset_file(url).is_some()
+    }
+
+    /// The file of the asset that `url` links, also with a query or a fragment after the link.
+    fn asset_file(&self, url: &str) -> Option<PathBuf> {
+        let (link, _) = split_suffix(url);
+        let key = with_scheme(link);
+        let assets = self.assets.borrow();
+        let file = assets.get(&key)?;
+        Some(file.clone())
     }
 
     /// The local file that the image or link URL `url` in the tree names; None for a URL that names
     /// no local file, such as `https://x`, `//x` or `data:x`.
     ///
     /// The link to an asset names the file that an action created or copied. A root path `/x`, and
-    /// any other relative URL, name a file in `input_dir`, as a link in the input does.
+    /// any other relative URL, name a file in `input_dir`, as a link in the input does; the file
+    /// path is the URL's path, decoded by [`url_path`].
     pub(crate) fn local_file(&self, url: &str) -> Option<PathBuf> {
-        let key = with_scheme(url);
-        if let Some(file) = self.assets.borrow().get(&key) {
-            return Some(file.clone());
-        }
-        if embed_markdown::is_root_path(url) {
-            let file = embed_markdown::resolve(&self.input_dir, &self.input_dir, url);
+        if let Some(file) = self.asset_file(url) {
             return Some(file);
         }
-        if !embed_markdown::is_relative(url) {
+        let is_local = embed_markdown::is_root_path(url) || embed_markdown::is_relative(url);
+        if !is_local {
             return None;
         }
-        Some(self.input_dir.join(url))
+        let file = embed_markdown::resolve(&self.input_dir, &self.input_dir, url);
+        Some(file)
     }
 }
 
@@ -385,7 +391,8 @@ fn escape_dollars<'a>(arena: &'a Arena<'a>, root: Node<'a>) {
     }
 }
 
-/// The path of `target` relative to the directory `base`, with `/` between the parts, for a link in a file under `base`.
+/// The path of `target` relative to the directory `base`, with `/` between the parts, for a link in a file under `base`;
+/// each part is percent-encoded as a URL path segment, so that a `#`, `?` or `%` in a name stays part of the path.
 pub fn relative_url(base: &Path, target: &Path) -> anyhow::Result<String> {
     let base = absolute_normalized(base)?;
     let target = absolute_normalized(target)?;
@@ -400,15 +407,80 @@ pub fn relative_url(base: &Path, target: &Path) -> anyhow::Result<String> {
         target_parts.next();
     }
 
-    let mut parts: Vec<&str> = base_parts.map(|_| "..").collect();
+    let mut parts: Vec<String> = base_parts.map(|_| "..".to_string()).collect();
     for part in target_parts {
         let part = part
             .as_os_str()
             .to_str()
             .with_context(|| format!("Path is not valid UTF-8: {}", target.display()))?;
-        parts.push(part);
+        let segment = encode_segment(part);
+        parts.push(segment);
     }
     Ok(parts.join("/"))
+}
+
+/// The ASCII bytes besides letters and digits that [`encode_segment`] keeps as they are.
+const SEGMENT_SAFE_BYTES: &[u8] = b"-._~!$&'()*+,;=@";
+
+/// `name`, a file name, as one segment of a URL path: each ASCII byte other than a letter, a digit
+/// or one of [`SEGMENT_SAFE_BYTES`] becomes `%XX`, such as the `#`, `?` and `%` that a URL reads as
+/// syntax, or the `:` that would make a relative URL read as a scheme. A non-ASCII character
+/// stays, so that a name such as `图.png` stays readable.
+fn encode_segment(name: &str) -> String {
+    let mut segment = String::new();
+    for c in name.chars() {
+        let keep =
+            !c.is_ascii() || c.is_ascii_alphanumeric() || SEGMENT_SAFE_BYTES.contains(&(c as u8));
+        if keep {
+            segment.push(c);
+        } else {
+            segment.push_str(&format!("%{:02X}", c as u8));
+        }
+    }
+    segment
+}
+
+/// `url` split before its first `?` or `#`: the path, then the query and the fragment, which are
+/// empty when `url` has neither.
+pub(crate) fn split_suffix(url: &str) -> (&str, &str) {
+    let end = url.find(['?', '#']).unwrap_or(url.len());
+    url.split_at(end)
+}
+
+/// The file path that the path of the local URL `url` spells: the part before `?` or `#`, with each
+/// `%XX` decoded. An invalid escape such as `%zz` stays as it is, and the whole path stays as it is
+/// when the decoded bytes are not UTF-8.
+pub(crate) fn url_path(url: &str) -> String {
+    let (path, _) = split_suffix(url);
+    let mut decoded = Vec::new();
+    let mut rest = path.as_bytes();
+    while let Some((&byte, after)) = rest.split_first() {
+        let escaped = after.get(..2).and_then(hex_byte);
+        match (byte, escaped) {
+            (b'%', Some(value)) => {
+                decoded.push(value);
+                rest = &after[2..];
+            }
+            _ => {
+                decoded.push(byte);
+                rest = after;
+            }
+        }
+    }
+    match String::from_utf8(decoded) {
+        Ok(decoded) => decoded,
+        Err(_) => path.to_string(),
+    }
+}
+
+/// The byte that `digits`, two hex digits, spell.
+fn hex_byte(digits: &[u8]) -> Option<u8> {
+    let is_hex = digits.iter().all(u8::is_ascii_hexdigit);
+    if !is_hex {
+        return None;
+    }
+    let text = std::str::from_utf8(digits).ok()?;
+    u8::from_str_radix(text, 16).ok()
 }
 
 /// `path` made absolute, with every `.` dropped and every `..` folded into the part before it.
@@ -509,7 +581,46 @@ mod tests {
 
         let folded = relative_url(Path::new("/a/b"), Path::new("/a/b/sub/.././x.png"))?;
         assert_eq!(folded, "x.png");
+
+        let encoded = relative_url(Path::new("/a"), Path::new("/a/s#1?/my pic:100%.png"))?;
+        assert_eq!(encoded, "s%231%3F/my%20pic%3A100%25.png");
+
+        let kept = relative_url(
+            Path::new("/a"),
+            Path::new("/a/图 (1)/a-b_c~d!$&'*+,;=@.png"),
+        )?;
+        assert_eq!(kept, "图%20(1)/a-b_c~d!$&'*+,;=@.png");
         Ok(())
+    }
+
+    #[test]
+    fn test_split_suffix() {
+        let both = split_suffix("a/b.svg?v=2#icon");
+        assert_eq!(both, ("a/b.svg", "?v=2#icon"));
+
+        let fragment = split_suffix("b.svg#x?y");
+        assert_eq!(fragment, ("b.svg", "#x?y"));
+
+        let none = split_suffix("b.svg");
+        assert_eq!(none, ("b.svg", ""));
+    }
+
+    #[test]
+    fn test_url_path() {
+        let space = url_path("my%20pic.svg#icon");
+        assert_eq!(space, "my pic.svg");
+
+        let unicode = url_path("%E5%9B%BE/图.svg?v=2");
+        assert_eq!(unicode, "图/图.svg");
+
+        let percent = url_path("100%25.svg");
+        assert_eq!(percent, "100%.svg");
+
+        let invalid_escape = url_path("100%.svg %zz %+1 %2");
+        assert_eq!(invalid_escape, "100%.svg %zz %+1 %2");
+
+        let not_utf8 = url_path("a%FF.svg");
+        assert_eq!(not_utf8, "a%FF.svg");
     }
 
     /// An escaped `\$` stays escaped, also at the start or in a link, and a formula stays.

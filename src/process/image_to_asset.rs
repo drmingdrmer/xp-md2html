@@ -1,5 +1,6 @@
 //! `image-to-asset`: copy every local image into the assets dir and link the copy.
 
+use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
@@ -16,15 +17,18 @@ use super::ActionContext;
 /// How many hex digits of the content's hash the file name keeps.
 const HASH_LEN: usize = 12;
 
-/// Copy every local image under `root` into `ctx.assets_dir` and link the copy; the link to an
-/// asset, a file that an action created or copied, keeps its URL.
+/// Copy every local image under `root` into `ctx.assets_dir` and link the copy, with the image
+/// URL's query and fragment, such as the `#icon` of an SVG; the link to an asset, a file that an
+/// action created or copied, keeps its URL.
 pub fn apply(root: Node<'_>, ctx: &ActionContext) -> anyhow::Result<()> {
     relink_local_images(root, |url| {
         if ctx.is_asset(url) {
             return Ok(url.to_string());
         }
         let path = copy(url, &ctx.input_dir, &ctx.assets_dir)?;
-        ctx.link_to(&path)
+        let link = ctx.link_to(&path)?;
+        let (_, suffix) = super::split_suffix(url);
+        Ok(format!("{link}{suffix}"))
     })
 }
 
@@ -58,18 +62,18 @@ fn copy(url: &str, input_dir: &Path, assets_dir: &Path) -> anyhow::Result<PathBu
     let source = embed_markdown::resolve(input_dir, input_dir, url);
     let content =
         fs::read(&source).with_context(|| format!("Failed to read image: {}", source.display()))?;
-    let path = assets_dir.join(file_name(url, &content));
+    let basename = source.file_name().and_then(OsStr::to_str).unwrap_or("");
+    let path = assets_dir.join(file_name(basename, &content));
     fs::write(&path, &content)
         .with_context(|| format!("Failed to write image: {}", path.display()))?;
     Ok(path)
 }
 
-/// `<sha256(content)[..12]>-<basename>`, where the basename is the last `/` segment of `url`.
-fn file_name(url: &str, content: &[u8]) -> String {
+/// `<sha256(content)[..12]>-<basename>`, where `basename` is the name of the image's file.
+fn file_name(basename: &str, content: &[u8]) -> String {
     let digest = Sha256::digest(content);
     let hex = format!("{digest:x}");
     let hash = &hex[..HASH_LEN];
-    let basename = url.rsplit('/').next().unwrap_or("");
     format!("{hash}-{basename}")
 }
 
@@ -123,6 +127,13 @@ mod tests {
         let copied = fs::read(&path)?;
         assert_eq!(copied, b"PNG-R");
 
+        // The URL's path is decoded, and its query and fragment name no file.
+        fs::write(input_dir.join("my pic.png"), b"PNG-A")?;
+        let path = copy("my%20pic.png?v=2#x", &input_dir, &assets_dir)?;
+        assert_eq!(path, assets_dir.join("e793c41f42c3-my pic.png"));
+        let copied = fs::read(&path)?;
+        assert_eq!(copied, b"PNG-A");
+
         let error = copy("img/missing.png", &input_dir, &assets_dir).unwrap_err();
         let expected = format!(
             "Failed to read image: {}",
@@ -134,10 +145,10 @@ mod tests {
 
     #[test]
     fn test_file_name() {
-        let name = file_name("img/a.png", b"PNG-A");
+        let name = file_name("a.png", b"PNG-A");
         assert_eq!(name, "e793c41f42c3-a.png");
 
-        let name = file_name("/r.png", b"PNG-R");
+        let name = file_name("r.png", b"PNG-R");
         assert_eq!(name, "0ced803886f0-r.png");
     }
 }

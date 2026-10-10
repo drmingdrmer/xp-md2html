@@ -192,6 +192,40 @@ fn test_process_table_to_image_output_collision() -> Result<()> {
     Ok(())
 }
 
+/// `table-to-image` draws the file that an image URL's decoded path names, with the URL's
+/// fragment: `#icon` makes the SVG's `rect:target` rule paint the rectangle blue.
+#[test]
+fn test_process_table_to_image_url_escapes() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="30"><style>rect { fill: red; } rect:target { fill: blue; }</style><rect id="icon" width="40" height="30"/></svg>"#;
+    fs::write(dir.path().join("my pic.svg"), svg)?;
+    let input = dir.path().join("post.md");
+    fs::write(&input, "| p |\n|---|\n| ![p](my%20pic.svg#icon) |\n")?;
+    let output_dir = dir.path().join("out");
+    let output = output_dir.join("post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "table-to-image", "--scale", "1"])
+        .arg("-i")
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    assert_eq!(markdown, "![](post-table-057b5e00a0eb.png)\n");
+
+    let png = output_dir.join("post-table-057b5e00a0eb.png");
+    let blue = count_pixels(&png, BLUE)?;
+    assert_eq!(blue, 40 * 30);
+    let red = count_pixels(&png, RED)?;
+    assert_eq!(red, 0);
+    Ok(())
+}
+
 /// How many pixels of the PNG at `path` have `color`.
 pub(crate) fn count_pixels(path: &Path, color: Rgba<u8>) -> Result<usize> {
     let image = image::open(path)?;
@@ -875,6 +909,65 @@ fn test_process_image_to_asset_keeps_assets() -> Result<()> {
         files.sort();
         assert_eq!(files, [asset, "post.md"]);
     }
+    Ok(())
+}
+
+/// `image-to-asset` copies the file that an image URL's decoded path names, and links the copy with
+/// each part of its path encoded, also the `#` of `--assets`, and with the URL's query and fragment.
+#[test]
+fn test_process_image_to_asset_url_escapes() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let input_dir = dir.path().join("posts");
+    fs::create_dir_all(&input_dir)?;
+    for name in ["my pic.svg", "图.svg", "100%.svg", "pic.svg"] {
+        fs::write(input_dir.join(name), RED_SVG)?;
+    }
+    let input = input_dir.join("post.md");
+    fs::write(
+        &input,
+        "![a](my%20pic.svg) ![b](<my pic.svg>) ![c](%E5%9B%BE.svg) ![d](图.svg) \
+         ![e](100%25.svg) ![f](pic.svg?v=2) ![g](pic.svg#icon)\n",
+    )?;
+    let output = dir.path().join("out/post.md");
+    let assets = dir.path().join("out/assets#1");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "image-to-asset", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("--assets")
+        .arg(&assets)
+        .args(["--url-base", "https://cdn.invalid/out"])
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let base = "https://cdn.invalid/out/assets%231/aa5290abd426";
+    let expected_markdown = format!(
+        "![a]({base}-my%20pic.svg) ![b]({base}-my%20pic.svg) ![c]({base}-图.svg) \
+         ![d]({base}-图.svg) ![e]({base}-100%25.svg) ![f]({base}-pic.svg?v=2) \
+         ![g]({base}-pic.svg#icon)\n"
+    );
+    assert_eq!(markdown, expected_markdown);
+
+    let mut copies = Vec::new();
+    for entry in fs::read_dir(&assets)? {
+        let entry = entry?;
+        let copied = fs::read(entry.path())?;
+        assert_eq!(copied, RED_SVG.as_bytes());
+        copies.push(entry.file_name());
+    }
+    copies.sort();
+    let expected_copies = [
+        "aa5290abd426-100%.svg",
+        "aa5290abd426-my pic.svg",
+        "aa5290abd426-pic.svg",
+        "aa5290abd426-图.svg",
+    ];
+    assert_eq!(copies, expected_copies);
     Ok(())
 }
 
