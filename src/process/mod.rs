@@ -50,7 +50,8 @@ pub struct ActionContext {
     pub output_dir: PathBuf,
     /// The URL that serves `output_dir`; a link to a file that an action creates starts with it.
     pub url_base: Option<String>,
-    /// The output file's stem; it prefixes the names of the files the actions create.
+    /// The markdown's name, such as the output file's stem; it prefixes the names of the files the
+    /// actions create.
     pub stem: String,
     /// The link reference definitions for the references that the markdown does not define.
     pub refs: Refs,

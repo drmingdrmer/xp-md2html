@@ -101,13 +101,13 @@ struct RenderArgs {
 /// The options of the `process` subcommand.
 #[derive(Args)]
 struct ProcessArgs {
-    /// Input markdown file
+    /// Input markdown file [default: stdin, with the current directory as its directory]
     #[arg(short, long)]
-    input: PathBuf,
+    input: Option<PathBuf>,
 
-    /// Output markdown file
+    /// Output markdown file [default: stdout, with the current directory as its directory]
     #[arg(short, long)]
-    output: PathBuf,
+    output: Option<PathBuf>,
 
     /// Directory for the files the actions create [default: the output file's directory]
     #[arg(long)]
@@ -162,7 +162,7 @@ struct ProcessArgs {
     embed_patterns: Vec<Regex>,
 
     /// An action to apply, in the given order; one of: table-to-image, download-images, embed-markdown, image-to-asset, table-to-html, mermaid-to-image, graphviz-to-image, code-to-image[=WIDTH], math-to-image[=SERVICE], math-to-img-tag=SERVICE, drop-front-matter, append-reference-list, math-block-to-one-line, math-inline-to-text, codespan-to-text, flatten-lists, rewrite-image-urls=/REGEX/REPL/, rewrite-link-urls=/REGEX/REPL/, join-math-block; SERVICE is one of zhihu, codecogs, upmath, wordpress; any character can stand for the / of /REGEX/REPL/, and REPL writes a group as \1; join-math-block joins a $$ formula that blank lines split, before the parse, wherever it is listed
-    #[arg(long = "action", required_unless_present = "preset")]
+    #[arg(long = "action")]
     actions: Vec<Action>,
 }
 
@@ -533,6 +533,19 @@ fn write_output(path: Option<&Path>, data: &[u8]) -> Result<()> {
         .with_context(|| format!("Failed to write output file: {}", path.display()))
 }
 
+/// The directory of `path`, made absolute, or the current directory when there is no path.
+fn file_dir(path: Option<&Path>) -> Result<PathBuf> {
+    let Some(path) = path else {
+        return std::env::current_dir().context("Failed to read the current directory");
+    };
+    let absolute = std::path::absolute(path)
+        .with_context(|| format!("Failed to resolve path: {}", path.display()))?;
+    let dir = absolute
+        .parent()
+        .with_context(|| format!("Path has no directory: {}", path.display()))?;
+    Ok(dir.to_path_buf())
+}
+
 /// The output formats of `render-math` and `render-graphviz`, as error messages list them.
 const SUPPORTED_SVG_FORMATS: &str = "svg, png, jpg, jpeg";
 
@@ -573,26 +586,21 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         actions,
     } = args;
 
-    let markdown = fs::read_to_string(&input)
-        .with_context(|| format!("Failed to read input file: {}", input.display()))?;
-    let absolute_input = std::path::absolute(&input)
-        .with_context(|| format!("Failed to resolve input path: {}", input.display()))?;
-    let input_dir = absolute_input
-        .parent()
-        .with_context(|| format!("Input path has no directory: {}", input.display()))?
-        .to_path_buf();
+    let markdown = read_input(input.as_deref())?;
+    let input_dir = file_dir(input.as_deref())?;
+    let output_dir = file_dir(output.as_deref())?;
 
-    let absolute_output = std::path::absolute(&output)
-        .with_context(|| format!("Failed to resolve output path: {}", output.display()))?;
-    let output_dir = absolute_output
-        .parent()
-        .with_context(|| format!("Output path has no directory: {}", output.display()))?
-        .to_path_buf();
-    let stem = absolute_output
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .with_context(|| format!("Output path has no file name: {}", output.display()))?
-        .to_string();
+    // The files that the actions create are named after the output file, else after the input
+    // file, else after stdin.
+    let named_file = output.as_deref().or(input.as_deref());
+    let stem = match named_file {
+        Some(path) => path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .with_context(|| format!("Path has no file name: {}", path.display()))?
+            .to_string(),
+        None => "stdin".to_string(),
+    };
     let assets_dir = assets.unwrap_or_else(|| output_dir.clone());
     let platform = preset.map(Preset::name);
     let refs = Refs::load(&ref_files, &markdown, platform)?;
@@ -654,10 +662,11 @@ fn process_command(args: ProcessArgs) -> Result<()> {
     all_actions.extend(actions);
 
     let processed = xp_md2html::process::process_markdown(&markdown, &all_actions, &ctx)?;
-    fs::write(&output, processed)
-        .with_context(|| format!("Failed to write output file: {}", output.display()))?;
+    write_output(output.as_deref(), processed.as_bytes())?;
 
-    println!("✅ Successfully wrote: {}", output.display());
+    if let Some(output) = output {
+        println!("✅ Successfully wrote: {}", output.display());
+    }
 
     Ok(())
 }

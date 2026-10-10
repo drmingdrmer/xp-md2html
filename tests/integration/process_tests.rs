@@ -1,7 +1,9 @@
 use std::ffi::OsString;
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 use std::process::Command;
+use std::process::Stdio;
 
 use anyhow::Result;
 use image::Rgba;
@@ -938,5 +940,95 @@ fn test_process_refs() -> Result<()> {
                              - own : <https://own.com>\n\n\
                              - protobuf : <https://pb.com>\n";
     assert_eq!(markdown, expected_markdown);
+    Ok(())
+}
+
+/// Without `-i`, `-o` and `--action`, `xpmd process` reads stdin, and writes only the markdown,
+/// parsed and printed again, to stdout.
+#[test]
+fn test_process_stdin_to_stdout() -> Result<()> {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .arg("process")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let mut stdin = child.stdin.take().unwrap();
+    stdin.write_all(b"_a_\n")?;
+    drop(stdin);
+    let result = child.wait_with_output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let stdout = String::from_utf8(result.stdout)?;
+    assert_eq!(stdout, "*a*\n");
+    Ok(())
+}
+
+/// With stdin and stdout, `xpmd process` takes the current directory as the directory of the input
+/// and of the output, and names the files that the actions create after stdin.
+#[test]
+fn test_process_stdin_to_stdout_files() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    fs::create_dir_all(dir.path().join("img"))?;
+    fs::write(dir.path().join("img/a.png"), b"PNG-A")?;
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "image-to-asset"])
+        .args(["--action", "table-to-image"])
+        .current_dir(dir.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let mut stdin = child.stdin.take().unwrap();
+    stdin.write_all(b"![a](img/a.png)\n\n| x |\n|---|\n| 1 |\n")?;
+    drop(stdin);
+    let result = child.wait_with_output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let stdout = String::from_utf8(result.stdout)?;
+    let expected_stdout = "![a](e793c41f42c3-a.png)\n\n![](stdin-table-6755bbc6e713.png)\n";
+    assert_eq!(stdout, expected_stdout);
+
+    let copied = fs::read(dir.path().join("e793c41f42c3-a.png"))?;
+    assert_eq!(copied, b"PNG-A");
+
+    let image = fs::read(dir.path().join("stdin-table-6755bbc6e713.png"))?;
+    let magic = image.get(..PNG_MAGIC.len());
+    assert_eq!(magic, Some(PNG_MAGIC.as_slice()));
+    Ok(())
+}
+
+/// With `-i` and without `-o`, `xpmd process` names the files that the actions create after the
+/// input file, and puts them in the current directory.
+#[test]
+fn test_process_file_to_stdout() -> Result<()> {
+    let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let input = root_dir.join("tests/fixtures/table.md");
+    let dir = tempfile::tempdir()?;
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "table-to-image", "-i"])
+        .arg(&input)
+        .current_dir(dir.path())
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let stdout = String::from_utf8(result.stdout)?;
+    let expected_stdout = "# Tables\n\n\
+        Before the table.\n\n\
+        ![](table-table-ef022588a517.png)\n\n\
+        After the table.\n";
+    assert_eq!(stdout, expected_stdout);
+
+    let image = fs::read(dir.path().join("table-table-ef022588a517.png"))?;
+    let magic = image.get(..PNG_MAGIC.len());
+    assert_eq!(magic, Some(PNG_MAGIC.as_slice()));
     Ok(())
 }
