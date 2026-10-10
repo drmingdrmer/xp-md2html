@@ -8,14 +8,9 @@ use std::path::PathBuf;
 use anyhow::Context;
 use comrak::nodes::NodeValue;
 use comrak::Node;
-use sha2::Digest;
-use sha2::Sha256;
 
 use super::embed_markdown;
 use super::ActionContext;
-
-/// How many hex digits of the content's hash the file name keeps.
-const HASH_LEN: usize = 12;
 
 /// Copy every local image under `root` into `ctx.assets_dir` and link the copy, with the image
 /// URL's query and fragment, such as the `#icon` of an SVG; the link to an asset, a file that an
@@ -71,9 +66,7 @@ fn copy(url: &str, input_dir: &Path, assets_dir: &Path) -> anyhow::Result<PathBu
 
 /// `<sha256(content)[..12]>-<basename>`, where `basename` is the name of the image's file.
 fn file_name(basename: &str, content: &[u8]) -> String {
-    let digest = Sha256::digest(content);
-    let hex = format!("{digest:x}");
-    let hash = &hex[..HASH_LEN];
+    let hash = super::short_hash(content);
     format!("{hash}-{basename}")
 }
 

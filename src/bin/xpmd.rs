@@ -643,6 +643,7 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         embed_patterns,
         renderer,
         assets: RefCell::default(),
+        rendered: RefCell::default(),
     };
 
     // The preset's actions run first, so an `--action` such as `rewrite-link-urls` sees their links.

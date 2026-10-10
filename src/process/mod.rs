@@ -23,6 +23,7 @@ pub mod table_to_image;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fs;
 use std::path::Component;
 use std::path::Path;
 use std::path::PathBuf;
@@ -35,6 +36,8 @@ use comrak::Arena;
 use comrak::Node;
 use comrak::Options;
 use fancy_regex::Regex;
+use sha2::Digest;
+use sha2::Sha256;
 
 use crate::process::refs::Refs;
 use crate::process::rewrite_urls::UrlRewrite;
@@ -66,6 +69,8 @@ pub struct ActionContext {
     /// [`ActionContext::link_to`] adds them. A link `//x` is keyed as `https://x`, the URL that
     /// `download-images` sees.
     pub assets: RefCell<HashMap<String, PathBuf>>,
+    /// The link to each PNG that `ActionContext::render_once` wrote, by the PNG's name.
+    pub rendered: RefCell<HashMap<String, String>>,
 }
 
 impl ActionContext {
@@ -116,6 +121,33 @@ impl ActionContext {
         }
         let file = embed_markdown::resolve(&self.input_dir, &self.input_dir, url);
         Some(file)
+    }
+
+    /// The link to the PNG that `render` makes, which goes into `assets_dir` as
+    /// `<stem>-<kind>-<hash of key>.png`. `key` holds each input of `render` that can change within
+    /// a run, such as a diagram's source; the renderer's settings and the local files stay the same.
+    /// Every render runs Chrome, so a repeated `kind` and `key` reuses the first PNG and skips
+    /// `render`.
+    pub(crate) fn render_once(
+        &self,
+        kind: &str,
+        key: &str,
+        render: impl FnOnce() -> anyhow::Result<Vec<u8>>,
+    ) -> anyhow::Result<String> {
+        let hash = short_hash(key.as_bytes());
+        let name = format!("{}-{kind}-{hash}.png", self.stem);
+        let cached = self.rendered.borrow().get(&name).cloned();
+        if let Some(link) = cached {
+            return Ok(link);
+        }
+
+        let png = render()?;
+        let path = self.assets_dir.join(&name);
+        fs::write(&path, png)
+            .with_context(|| format!("Failed to write image: {}", path.display()))?;
+        let link = self.link_to(&path)?;
+        self.rendered.borrow_mut().insert(name, link.clone());
+        Ok(link)
     }
 }
 
@@ -546,9 +578,21 @@ fn with_scheme(url: &str) -> String {
     url.to_string()
 }
 
+/// How many hex digits of a SHA-256 hash the name of an asset keeps.
+const HASH_LEN: usize = 12;
+
+/// The first [`HASH_LEN`] hex digits of the SHA-256 hash of `content`, which tell assets apart by
+/// their names.
+pub(crate) fn short_hash(content: &[u8]) -> String {
+    let digest = Sha256::digest(content);
+    let hex = format!("{digest:x}");
+    hex[..HASH_LEN].to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::render::chrome::RenderConfig;
 
     #[test]
     fn test_action_from_str() {
@@ -672,6 +716,48 @@ mod tests {
         let mut out = String::new();
         comrak::format_commonmark(root, &options, &mut out)?;
         assert_eq!(out, markdown);
+        Ok(())
+    }
+
+    /// `render_once` writes and links the PNG of a new kind and key; a repeated kind and key gets
+    /// the same link without a render.
+    #[test]
+    fn test_render_once() -> anyhow::Result<()> {
+        let dir = tempfile::tempdir()?;
+        let config = RenderConfig {
+            mime: "text/html".to_string(),
+            output_type: "png".to_string(),
+            width: 1000,
+            height: 1000,
+            scale: 1,
+            asset_base: None,
+        };
+        let ctx = ActionContext {
+            input_dir: dir.path().to_path_buf(),
+            assets_dir: dir.path().to_path_buf(),
+            output_dir: dir.path().to_path_buf(),
+            url_base: None,
+            stem: "post".to_string(),
+            refs: Refs::default(),
+            embed_patterns: Vec::new(),
+            renderer: LazyRenderer::new(config),
+            assets: RefCell::default(),
+            rendered: RefCell::default(),
+        };
+
+        // The hash is `printf '| a |' | shasum -a 256 | cut -c1-12`.
+        let link = ctx.render_once("table", "| a |", || Ok(b"PNG-A".to_vec()))?;
+        assert_eq!(link, "post-table-13bb5e1404fe.png");
+        let png = fs::read(dir.path().join(&link))?;
+        assert_eq!(png, b"PNG-A");
+
+        let link = ctx.render_once("table", "| a |", || anyhow::bail!("rendered again"))?;
+        assert_eq!(link, "post-table-13bb5e1404fe.png");
+
+        let link = ctx.render_once("code", "| a |", || Ok(b"PNG-C".to_vec()))?;
+        assert_eq!(link, "post-code-13bb5e1404fe.png");
+        let png = fs::read(dir.path().join(&link))?;
+        assert_eq!(png, b"PNG-C");
         Ok(())
     }
 }

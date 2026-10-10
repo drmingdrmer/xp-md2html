@@ -7,13 +7,8 @@ use std::path::PathBuf;
 use anyhow::Context;
 use comrak::nodes::NodeValue;
 use comrak::Node;
-use sha2::Digest;
-use sha2::Sha256;
 
 use super::ActionContext;
-
-/// How many hex digits of the URL's hash the file name keeps.
-const HASH_LEN: usize = 12;
 
 /// The largest response body a download accepts; `ureq` stops reading at this size.
 const MAX_IMAGE_BYTES: u64 = 100 * 1024 * 1024;
@@ -70,14 +65,12 @@ fn download(url: &str, assets_dir: &Path) -> anyhow::Result<PathBuf> {
 /// `<sha256(url)[..12]>-<basename>`, where the basename is the last `/` segment of the URL
 /// without `?...` and `#...`; the hash alone when the basename is empty.
 fn file_name(url: &str) -> String {
-    let digest = Sha256::digest(url.as_bytes());
-    let hex = format!("{digest:x}");
-    let hash = &hex[..HASH_LEN];
+    let hash = super::short_hash(url.as_bytes());
 
     let path = url.split(['?', '#']).next().unwrap_or("");
     let basename = path.rsplit('/').next().unwrap_or("");
     if basename.is_empty() {
-        return hash.to_string();
+        return hash;
     }
     format!("{hash}-{basename}")
 }

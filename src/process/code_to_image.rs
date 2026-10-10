@@ -1,13 +1,8 @@
 //! `code-to-image`: render every code block to a PNG and link the PNG where the block was.
 
-use std::fs;
-
-use anyhow::Context;
 use comrak::nodes::NodeValue;
 use comrak::Arena;
 use comrak::Node;
-use sha2::Digest;
-use sha2::Sha256;
 
 use super::ActionContext;
 use crate::render::code::code_to_html;
@@ -23,9 +18,6 @@ pub const DEFAULT_WIDTH: u32 = 1000;
 /// The width in pixels at which a block with a language wraps, as in md2zhihu's
 /// `block_code_to_fixwidth_jpg`.
 const LANG_WIDTH: u32 = 600;
-
-/// How many hex digits of the block's hash the file name keeps.
-const HASH_LEN: usize = 12;
 
 /// The language of a block that comrak renders as display math, not as code.
 pub(crate) const MATH_LANG: &str = "math";
@@ -113,16 +105,10 @@ fn render(
         .renderer
         .get()?
         .with_window_width(style.width.saturating_add(2 * PAGE_PADDING));
-    let png = renderer.render_markup(&page)?;
 
-    let markdown = format!("```{}\n{}```\n", lang.unwrap_or(""), code);
-    let digest = Sha256::digest(markdown.as_bytes());
-    let hash = format!("{digest:x}");
-    let name = format!("{}-code-{}.png", ctx.stem, &hash[..HASH_LEN]);
-    let path = ctx.assets_dir.join(name);
-    fs::write(&path, png).with_context(|| format!("Failed to write image: {}", path.display()))?;
-
-    ctx.link_to(&path)
+    // The same block at another width is another PNG.
+    let key = format!("{}\n```{}\n{}```\n", style.width, lang.unwrap_or(""), code);
+    ctx.render_once("code", &key, || renderer.render_markup(&page))
 }
 
 #[cfg(test)]

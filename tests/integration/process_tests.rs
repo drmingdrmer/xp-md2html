@@ -337,15 +337,15 @@ fn test_process_code_to_image() -> Result<()> {
 
     let markdown = fs::read_to_string(&output)?;
     let expected_markdown = "# Code\n\n\
-        ![](assets/post-code-8384d441da95.png)\n\n\
-        ![](assets/post-code-e39ad6284dc4.png)\n\n\
+        ![](assets/post-code-1a1c79680ddb.png)\n\n\
+        ![](assets/post-code-320e2aa7312b.png)\n\n\
         Done.\n";
     assert_eq!(markdown, expected_markdown);
 
-    let (rust_width, _) = image::image_dimensions(assets.join("post-code-8384d441da95.png"))?;
+    let (rust_width, _) = image::image_dimensions(assets.join("post-code-1a1c79680ddb.png"))?;
     assert_eq!(rust_width, 600);
 
-    let (plain_width, _) = image::image_dimensions(assets.join("post-code-e39ad6284dc4.png"))?;
+    let (plain_width, _) = image::image_dimensions(assets.join("post-code-320e2aa7312b.png"))?;
     assert_eq!(plain_width, 800);
     output_dir.close()
 }

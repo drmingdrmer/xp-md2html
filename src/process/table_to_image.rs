@@ -1,22 +1,15 @@
 //! `table-to-image`: render every table to a PNG and link the PNG where the table was.
 
 use std::collections::HashMap;
-use std::fs;
 use std::sync::Arc;
 
-use anyhow::Context;
 use comrak::nodes::NodeValue;
 use comrak::Arena;
 use comrak::Node;
-use sha2::Digest;
-use sha2::Sha256;
 
 use super::ActionContext;
 use crate::render::chrome::ChromeRenderer;
 use crate::render::markdown::html_options;
-
-/// How many hex digits of the table's hash the file name keeps.
-const HASH_LEN: usize = 12;
 
 /// The page around one table: GitHub's table style on a transparent page, which the trim cuts down to the table.
 const PAGE_HEAD: &str = r#"<!DOCTYPE html>
@@ -79,15 +72,7 @@ fn render(table: Node<'_>, ctx: &ActionContext) -> anyhow::Result<String> {
 
     let page = format!("{PAGE_HEAD}{html}{PAGE_TAIL}");
     let renderer = ctx.renderer.get()?;
-    let png = renderer.render_markup(&page)?;
-
-    let digest = Sha256::digest(markdown.as_bytes());
-    let hash = format!("{digest:x}");
-    let name = format!("{}-table-{}.png", ctx.stem, &hash[..HASH_LEN]);
-    let path = ctx.assets_dir.join(name);
-    fs::write(&path, png).with_context(|| format!("Failed to write image: {}", path.display()))?;
-
-    ctx.link_to(&path)
+    ctx.render_once("table", &markdown, || renderer.render_markup(&page))
 }
 
 /// The `file://` URL of the local file that each image under `table` names, with the query and

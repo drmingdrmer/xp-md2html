@@ -1,21 +1,13 @@
 //! `mermaid-to-image`: render every ```` ```mermaid ```` block to a PNG and link the PNG where the block was.
 
-use std::fs;
-
-use anyhow::Context;
 use comrak::nodes::NodeValue;
 use comrak::Arena;
 use comrak::Node;
-use sha2::Digest;
-use sha2::Sha256;
 
 use super::ActionContext;
 use crate::render::chrome::ChromeRenderer;
 use crate::render::mermaid::mermaid_to_svg;
 use crate::render::page::svg_to_image;
-
-/// How many hex digits of the source's hash the file name keeps.
-const HASH_LEN: usize = 12;
 
 /// Replace every ```` ```mermaid ```` block under `root` with a PNG that `ctx.renderer` renders into
 /// `ctx.assets_dir`.
@@ -74,16 +66,10 @@ pub(crate) fn render(
     ctx: &ActionContext,
 ) -> anyhow::Result<String> {
     let renderer = ctx.renderer.get()?;
-    let svg = to_svg(renderer, source)?;
-    let png = svg_to_image(renderer, &svg)?;
-
-    let digest = Sha256::digest(source.as_bytes());
-    let hash = format!("{digest:x}");
-    let name = format!("{}-{}-{}.png", ctx.stem, lang, &hash[..HASH_LEN]);
-    let path = ctx.assets_dir.join(name);
-    fs::write(&path, png).with_context(|| format!("Failed to write image: {}", path.display()))?;
-
-    ctx.link_to(&path)
+    ctx.render_once(lang, source, || {
+        let svg = to_svg(renderer, source)?;
+        svg_to_image(renderer, &svg)
+    })
 }
 
 #[cfg(test)]

@@ -1,15 +1,9 @@
 //! `math-to-image`: render every formula to a PNG and link the PNG where the formula was;
 //! `math-to-image=SERVICE` links the image of an online formula service instead.
 
-use std::collections::HashMap;
-use std::fs;
-
-use anyhow::Context;
 use comrak::nodes::NodeValue;
 use comrak::Arena;
 use comrak::Node;
-use sha2::Digest;
-use sha2::Sha256;
 
 use super::code_to_image::MATH_LANG;
 use super::mermaid_to_image::replace_code_blocks;
@@ -17,9 +11,6 @@ use super::ActionContext;
 use crate::render::math::math_to_image;
 use crate::render::math_img::math_url;
 use crate::render::math_img::MathService;
-
-/// How many hex digits of the formula's hash the file name keeps.
-const HASH_LEN: usize = 12;
 
 /// Replace every `$..$` and `$$..$$` formula and every ```` ```math ```` block under `root` with a
 /// PNG that `ctx.renderer` renders into `ctx.assets_dir`, or, with a `service`, with the image at
@@ -30,20 +21,11 @@ pub fn apply<'a>(
     service: Option<MathService>,
     ctx: &ActionContext,
 ) -> anyhow::Result<()> {
-    // A formula such as `$n$` often repeats, and every render runs Chrome, so a repeat reuses the
-    // URL of the first render.
-    let mut urls: HashMap<(String, bool), String> = HashMap::new();
-    let mut image_url = |tex: &str, display: bool| -> anyhow::Result<String> {
+    let image_url = |tex: &str, display: bool| -> anyhow::Result<String> {
         if let Some(service) = service {
             return Ok(math_url(service, tex, display));
         }
-        let key = (tex.to_string(), display);
-        if let Some(url) = urls.get(&key) {
-            return Ok(url.clone());
-        }
-        let url = render(tex, display, ctx)?;
-        urls.insert(key, url.clone());
-        Ok(url)
+        render(tex, display, ctx)
     };
 
     replace_code_blocks(arena, root, MATH_LANG, |tex| image_url(tex, true))?;
@@ -89,7 +71,6 @@ fn formula_of(node: Node<'_>) -> Option<(String, bool)> {
 /// return the link to the PNG.
 fn render(tex: &str, display: bool, ctx: &ActionContext) -> anyhow::Result<String> {
     let renderer = ctx.renderer.get()?;
-    let png = math_to_image(renderer, tex, display)?;
 
     // The display style draws some formulas bigger, so the name hashes the delimiters too.
     let markdown = if display {
@@ -97,13 +78,7 @@ fn render(tex: &str, display: bool, ctx: &ActionContext) -> anyhow::Result<Strin
     } else {
         format!("${tex}$")
     };
-    let digest = Sha256::digest(markdown.as_bytes());
-    let hash = format!("{digest:x}");
-    let name = format!("{}-math-{}.png", ctx.stem, &hash[..HASH_LEN]);
-    let path = ctx.assets_dir.join(name);
-    fs::write(&path, png).with_context(|| format!("Failed to write image: {}", path.display()))?;
-
-    ctx.link_to(&path)
+    ctx.render_once("math", &markdown, || math_to_image(renderer, tex, display))
 }
 
 #[cfg(test)]
