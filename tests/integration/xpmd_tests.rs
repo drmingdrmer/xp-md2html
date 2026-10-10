@@ -3,6 +3,7 @@ use std::io;
 use std::io::Read;
 use std::io::Write;
 use std::path::Path;
+use std::path::PathBuf;
 use std::process::Command;
 use std::process::Output;
 use std::process::Stdio;
@@ -38,7 +39,7 @@ const POLL_INTERVAL: Duration = Duration::from_millis(10);
 fn test_render_prints_nothing() -> Result<()> {
     let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let input = root_dir.join("tests/fixtures/simple.html");
-    let output_dir = tempfile::tempdir()?;
+    let output_dir = TestDir::new()?;
     let output = output_dir.path().join("simple.png");
 
     let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
@@ -56,7 +57,7 @@ fn test_render_prints_nothing() -> Result<()> {
     let data = fs::read(&output)?;
     let magic = data.get(..PNG_MAGIC.len());
     assert_eq!(magic, Some(PNG_MAGIC.as_slice()));
-    Ok(())
+    output_dir.close()
 }
 
 /// Without `-f`, the extension of `-o` picks the output format.
@@ -64,7 +65,7 @@ fn test_render_prints_nothing() -> Result<()> {
 fn test_render_takes_format_from_output_extension() -> Result<()> {
     let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let input = root_dir.join("tests/fixtures/simple.html");
-    let output_dir = tempfile::tempdir()?;
+    let output_dir = TestDir::new()?;
     let output = output_dir.path().join("simple.jpg");
 
     let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
@@ -80,14 +81,14 @@ fn test_render_takes_format_from_output_extension() -> Result<()> {
     let data = fs::read(&output)?;
     let magic = data.get(..JPEG_MAGIC.len());
     assert_eq!(magic, Some(JPEG_MAGIC.as_slice()));
-    Ok(())
+    output_dir.close()
 }
 
 /// `render-markup` draws each CSS pixel as 2x2 pixels by default, and as 3x3 with `--scale 3`: the
 /// PNG of the 40 by 30 red SVG is red all over.
 #[test]
 fn test_render_scale() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input = dir.path().join("red.svg");
     fs::write(&input, RED_SVG)?;
     let output = dir.path().join("red.png");
@@ -114,7 +115,7 @@ fn test_render_scale() -> Result<()> {
         let red = count_pixels(&output, RED)?;
         assert_eq!(red, expected_red);
     }
-    Ok(())
+    dir.close()
 }
 
 /// Without `-i` and `-o`, `render-markup` reads HTML from stdin and writes the image to stdout.
@@ -141,7 +142,7 @@ fn test_render_stdin_to_stdout() -> Result<()> {
 )]
 fn test_render_without_imagemagick() -> Result<()> {
     let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let empty_path = dir.path().join("bin");
     fs::create_dir_all(&empty_path)?;
 
@@ -175,7 +176,7 @@ fn test_render_without_imagemagick() -> Result<()> {
 
     let data = fs::read_to_string(&svg)?;
     assert!(data.starts_with("<svg "), "{data}");
-    Ok(())
+    dir.close()
 }
 
 /// Without ImageMagick, a PNG fails with the help to install ImageMagick, which trims it.
@@ -186,7 +187,7 @@ fn test_render_without_imagemagick() -> Result<()> {
 )]
 fn test_render_png_without_imagemagick() -> Result<()> {
     let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let empty_path = dir.path().join("bin");
     fs::create_dir_all(&empty_path)?;
 
@@ -207,7 +208,7 @@ fn test_render_png_without_imagemagick() -> Result<()> {
         "Error: Failed to trim the image. Make sure ImageMagick is installed \
                                and accessible; an SVG or a PDF does not need it.";
     assert_eq!(first_line, Some(expected_first_line));
-    Ok(())
+    dir.close()
 }
 
 /// A failed run is an error that names the command, with its exit status and its stderr.
@@ -246,6 +247,26 @@ fn test_run_bounded_kills() -> Result<()> {
     assert!(elapsed < RUN_TIMEOUT, "{elapsed:?}");
     let message = result.unwrap_err().to_string();
     assert_eq!(message, "\"sleep\" \"10\" ran longer than 100ms; stderr:\n");
+    Ok(())
+}
+
+/// A `TestDir` that the test drops without `close`, as a failing test does, keeps its directory;
+/// `close` deletes the directory and the files in it.
+#[test]
+fn test_test_dir_keeps_unclosed() -> Result<()> {
+    let unclosed = TestDir::new()?;
+    let unclosed_path = unclosed.path().to_path_buf();
+    drop(unclosed);
+    let is_kept = unclosed_path.is_dir();
+    assert!(is_kept);
+    fs::remove_dir(&unclosed_path)?;
+
+    let closed = TestDir::new()?;
+    let closed_path = closed.path().to_path_buf();
+    fs::write(closed_path.join("a.txt"), "a")?;
+    closed.close()?;
+    let is_deleted = !closed_path.exists();
+    assert!(is_deleted);
     Ok(())
 }
 
@@ -363,4 +384,44 @@ fn join(reader: JoinHandle<io::Result<Vec<u8>>>) -> Result<Vec<u8>> {
     };
     let data = read?;
     Ok(data)
+}
+
+/// A temporary directory for one test. A passing test ends with [`TestDir::close`], which deletes
+/// the directory. A failing test panics or returns an error before that, so the directory stays,
+/// and its path goes to stderr, which the report of the failed test shows.
+pub(crate) struct TestDir {
+    path: PathBuf,
+    is_closed: bool,
+}
+
+impl TestDir {
+    pub(crate) fn new() -> io::Result<TestDir> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.keep();
+        Ok(TestDir {
+            path,
+            is_closed: false,
+        })
+    }
+
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+
+    /// Delete the directory: the last step of a passing test.
+    pub(crate) fn close(mut self) -> Result<()> {
+        fs::remove_dir_all(&self.path)
+            .with_context(|| format!("Failed to delete {}", self.path.display()))?;
+        self.is_closed = true;
+        Ok(())
+    }
+}
+
+impl Drop for TestDir {
+    fn drop(&mut self) {
+        if self.is_closed {
+            return;
+        }
+        eprintln!("Kept the test directory: {}", self.path.display());
+    }
 }

@@ -8,6 +8,7 @@ use super::process_tests::count_pixels;
 use super::process_tests::BLUE;
 use super::process_tests::RED;
 use super::xpmd_tests::BoundedOutput;
+use super::xpmd_tests::TestDir;
 
 /// Every PNG file starts with these bytes.
 const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
@@ -39,7 +40,7 @@ fn test_render_graphviz_svg_and_png() -> Result<()> {
     assert!(svg.contains(">边 edge</text>"), "{svg}");
     assert!(svg.contains("rotate(0)"), "{svg}");
 
-    let output_dir = tempfile::tempdir()?;
+    let output_dir = TestDir::new()?;
     let output = output_dir.path().join("graph.png");
     let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
         .args(["render-graphviz", "-i"])
@@ -56,7 +57,7 @@ fn test_render_graphviz_svg_and_png() -> Result<()> {
     let png = fs::read(&output)?;
     let magic = png.get(..PNG_MAGIC.len());
     assert_eq!(magic, Some(PNG_MAGIC.as_slice()));
-    Ok(())
+    output_dir.close()
 }
 
 /// A graph wider or taller than the window of the DOM dump keeps both ends at the default scale 2:
@@ -67,7 +68,7 @@ fn test_render_graphviz_svg_and_png() -> Result<()> {
 /// 104 CSS pixels, with each edge on a whole pixel, and 5200 and 208 pixels at scale 2.
 #[test]
 fn test_render_graphviz_wide_and_tall() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let cases = [("wide", "LR", (5200, 208)), ("tall", "TB", (208, 5200))];
     for (name, rankdir, expected_size) in cases {
         let graph = format!(
@@ -100,13 +101,13 @@ fn test_render_graphviz_wide_and_tall() -> Result<()> {
         let red = count_pixels(&output, RED)?;
         assert_eq!(red, 192 * 192, "the end of the {name} graph");
     }
-    Ok(())
+    dir.close()
 }
 
 /// A DOT syntax error is reported with Graphviz's message, and nothing is written.
 #[test]
 fn test_render_graphviz_error() -> Result<()> {
-    let output_dir = tempfile::tempdir()?;
+    let output_dir = TestDir::new()?;
     let input = output_dir.path().join("bad.dot");
     fs::write(&input, "digraph { a -> ; }\n")?;
 
@@ -123,5 +124,5 @@ fn test_render_graphviz_error() -> Result<()> {
         stderr.contains("Graphviz: syntax error in line 1 near ';'"),
         "{stderr}"
     );
-    Ok(())
+    output_dir.close()
 }

@@ -8,6 +8,7 @@ use super::process_tests::count_pixels;
 use super::process_tests::BLUE;
 use super::process_tests::RED;
 use super::xpmd_tests::BoundedOutput;
+use super::xpmd_tests::TestDir;
 
 /// Every PNG file starts with these bytes.
 const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
@@ -40,7 +41,7 @@ fn test_render_math_svg_and_png() -> Result<()> {
     assert!(!svg.contains("mjx-container"), "{svg}");
     assert_eq!(svg.matches("<svg").count(), 1);
 
-    let output_dir = tempfile::tempdir()?;
+    let output_dir = TestDir::new()?;
     let output = output_dir.path().join("math.png");
     let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
         .args(["render-math", "--inline", "-i"])
@@ -57,7 +58,7 @@ fn test_render_math_svg_and_png() -> Result<()> {
     let png = fs::read(&output)?;
     let magic = png.get(..PNG_MAGIC.len());
     assert_eq!(magic, Some(PNG_MAGIC.as_slice()));
-    Ok(())
+    output_dir.close()
 }
 
 /// A formula wider or taller than the window of the DOM dump keeps both ends: the image holds the
@@ -72,7 +73,7 @@ fn test_render_math_wide_and_tall() -> Result<()> {
     let column = [blue_square, &rows, red_square].join(r"\\");
     let tall = format!(r"\begin{{array}}{{c}}{column}\end{{array}}");
 
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     for (name, tex) in [("wide", wide), ("tall", tall)] {
         let input = dir.path().join(format!("{name}.tex"));
         fs::write(&input, tex)?;
@@ -93,5 +94,5 @@ fn test_render_math_wide_and_tall() -> Result<()> {
         let red = count_pixels(&output, RED)?;
         assert!(red > 0, "the {name} formula lost its end");
     }
-    Ok(())
+    dir.close()
 }

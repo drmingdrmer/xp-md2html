@@ -5,6 +5,7 @@ use std::process::Command;
 use anyhow::Result;
 
 use super::xpmd_tests::BoundedOutput;
+use super::xpmd_tests::TestDir;
 
 /// `xpmd render-markdown` prints a page in GitHub's style; `--bare` prints only the content's HTML.
 #[test]
@@ -32,7 +33,7 @@ fn test_render_markdown_page_and_bare() -> Result<()> {
         "{page}"
     );
 
-    let output_dir = tempfile::tempdir()?;
+    let output_dir = TestDir::new()?;
     let output = output_dir.path().join("table.html");
     let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
         .args(["render-markdown", "--bare", "-i"])
@@ -57,7 +58,7 @@ fn test_render_markdown_page_and_bare() -> Result<()> {
     );
     // The page holds exactly the bare HTML.
     assert!(page.contains(&bare), "{page}");
-    Ok(())
+    output_dir.close()
 }
 
 /// Without `-i`, `render-markdown` reads the markdown from stdin.

@@ -5,6 +5,7 @@ use std::process::Command;
 use anyhow::Result;
 
 use super::xpmd_tests::BoundedOutput;
+use super::xpmd_tests::TestDir;
 
 /// `xpmd render-code` prints the page to stdout and nothing else; `-o` writes the same bytes to a file.
 #[test]
@@ -29,7 +30,7 @@ fn test_render_code_to_stdout_and_file() -> Result<()> {
     );
     assert!(stdout.contains("&lt;hello&gt; &amp; goodbye"), "{stdout}");
 
-    let output_dir = tempfile::tempdir()?;
+    let output_dir = TestDir::new()?;
     let output = output_dir.path().join("code.html");
     let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
         .args(["render-code", "-i"])
@@ -46,7 +47,7 @@ fn test_render_code_to_stdout_and_file() -> Result<()> {
     // Without `-l`, the extension `rs` of `-i` picks the language, so the page is the same.
     let written = fs::read_to_string(&output)?;
     assert_eq!(written, stdout);
-    Ok(())
+    output_dir.close()
 }
 
 /// Without `-i`, `render-code` reads the code from stdin.

@@ -17,6 +17,7 @@ use sha2::Digest;
 use sha2::Sha256;
 
 use super::xpmd_tests::BoundedOutput;
+use super::xpmd_tests::TestDir;
 
 /// Every PNG file starts with these bytes.
 const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
@@ -37,7 +38,7 @@ pub(crate) const BLUE: Rgba<u8> = Rgba([0, 0, 255, 255]);
 fn test_process_table_to_image() -> Result<()> {
     let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let input = root_dir.join("tests/fixtures/table.md");
-    let output_dir = tempfile::tempdir()?;
+    let output_dir = TestDir::new()?;
     let output = output_dir.path().join("post.md");
     let assets = output_dir.path().join("assets");
 
@@ -67,7 +68,7 @@ fn test_process_table_to_image() -> Result<()> {
     let image = fs::read(assets.join("post-table-ef022588a517.png"))?;
     let magic = image.get(..PNG_MAGIC.len());
     assert_eq!(magic, Some(PNG_MAGIC.as_slice()));
-    Ok(())
+    output_dir.close()
 }
 
 /// `table-to-image` draws each image of a table from the input's file, also one that a root path
@@ -75,7 +76,7 @@ fn test_process_table_to_image() -> Result<()> {
 /// names no file.
 #[test]
 fn test_process_table_to_image_input_images() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input_dir = dir.path().join("posts");
     fs::create_dir_all(input_dir.join("img"))?;
     fs::write(input_dir.join("img/r.svg"), RED_SVG)?;
@@ -106,14 +107,14 @@ fn test_process_table_to_image_input_images() -> Result<()> {
     assert_eq!(red, 80 * 60);
     let blue = count_pixels(&png, BLUE)?;
     assert_eq!(blue, 40 * 20);
-    Ok(())
+    dir.close()
 }
 
 /// After `image-to-asset`, `table-to-image` draws the copy of the table's image, which the table
 /// links relative to the output file, or under `--url-base` before the copy is online.
 #[test]
 fn test_process_table_to_image_copied_image() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input_dir = dir.path().join("posts");
     fs::create_dir_all(&input_dir)?;
     fs::write(input_dir.join("r.svg"), RED_SVG)?;
@@ -130,7 +131,7 @@ fn test_process_table_to_image_copied_image() -> Result<()> {
         ),
     ];
     for (url_base_args, link_start, png_name) in cases {
-        let output_dir = tempfile::tempdir()?;
+        let output_dir = TestDir::new()?;
         let output = output_dir.path().join("post.md");
 
         let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
@@ -152,15 +153,16 @@ fn test_process_table_to_image_copied_image() -> Result<()> {
         let png = output_dir.path().join(png_name);
         let red = count_pixels(&png, RED)?;
         assert_eq!(red, 40 * 30, "{expected_markdown}");
+        output_dir.close()?;
     }
-    Ok(())
+    dir.close()
 }
 
 /// `table-to-image` draws a table's image from the input's directory, also when the output's
 /// directory holds another file of that name.
 #[test]
 fn test_process_table_to_image_output_collision() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input_dir = dir.path().join("posts");
     fs::create_dir_all(&input_dir)?;
     fs::write(input_dir.join("pic.svg"), RED_SVG)?;
@@ -190,14 +192,14 @@ fn test_process_table_to_image_output_collision() -> Result<()> {
     assert_eq!(red, 40 * 30);
     let blue = count_pixels(&png, BLUE)?;
     assert_eq!(blue, 0);
-    Ok(())
+    dir.close()
 }
 
 /// `table-to-image` draws the file that an image URL's decoded path names, with the URL's
 /// fragment: `#icon` makes the SVG's `rect:target` rule paint the rectangle blue.
 #[test]
 fn test_process_table_to_image_url_escapes() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="30"><style>rect { fill: red; } rect:target { fill: blue; }</style><rect id="icon" width="40" height="30"/></svg>"#;
     fs::write(dir.path().join("my pic.svg"), svg)?;
     let input = dir.path().join("post.md");
@@ -224,7 +226,7 @@ fn test_process_table_to_image_url_escapes() -> Result<()> {
     assert_eq!(blue, 40 * 30);
     let red = count_pixels(&png, RED)?;
     assert_eq!(red, 0);
-    Ok(())
+    dir.close()
 }
 
 /// How many pixels of the PNG at `path` have `color`.
@@ -242,7 +244,7 @@ pub(crate) fn count_pixels(path: &Path, color: Rgba<u8>) -> Result<usize> {
 fn test_process_mermaid_to_image() -> Result<()> {
     let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let input = root_dir.join("tests/fixtures/mermaid.md");
-    let output_dir = tempfile::tempdir()?;
+    let output_dir = TestDir::new()?;
     let output = output_dir.path().join("post.md");
     let assets = output_dir.path().join("assets");
 
@@ -267,7 +269,7 @@ fn test_process_mermaid_to_image() -> Result<()> {
     let image = fs::read(assets.join("post-mermaid-2a403c0fada7.png"))?;
     let magic = image.get(..PNG_MAGIC.len());
     assert_eq!(magic, Some(PNG_MAGIC.as_slice()));
-    Ok(())
+    output_dir.close()
 }
 
 /// `xpmd process --action graphviz-to-image` writes the graph's PNG into `--assets`, named by the
@@ -276,7 +278,7 @@ fn test_process_mermaid_to_image() -> Result<()> {
 fn test_process_graphviz_to_image() -> Result<()> {
     let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let input = root_dir.join("tests/fixtures/graphviz.md");
-    let output_dir = tempfile::tempdir()?;
+    let output_dir = TestDir::new()?;
     let output = output_dir.path().join("post.md");
     let assets = output_dir.path().join("assets");
 
@@ -301,7 +303,7 @@ fn test_process_graphviz_to_image() -> Result<()> {
     let image = fs::read(assets.join("post-graphviz-7f7eca5c2cac.png"))?;
     let magic = image.get(..PNG_MAGIC.len());
     assert_eq!(magic, Some(PNG_MAGIC.as_slice()));
-    Ok(())
+    output_dir.close()
 }
 
 /// `xpmd process --action code-to-image=800` replaces each code block with a PNG: a long line
@@ -310,7 +312,7 @@ fn test_process_graphviz_to_image() -> Result<()> {
 fn test_process_code_to_image() -> Result<()> {
     let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let input = root_dir.join("tests/fixtures/code.md");
-    let output_dir = tempfile::tempdir()?;
+    let output_dir = TestDir::new()?;
     let output = output_dir.path().join("post.md");
     let assets = output_dir.path().join("assets");
 
@@ -345,14 +347,14 @@ fn test_process_code_to_image() -> Result<()> {
 
     let (plain_width, _) = image::image_dimensions(assets.join("post-code-e39ad6284dc4.png"))?;
     assert_eq!(plain_width, 800);
-    Ok(())
+    output_dir.close()
 }
 
 /// `xpmd process --action code-to-image=4294967295` fails with an error instead of a panic: the
 /// width plus the page padding passes `u32::MAX`, a window that Chrome cannot take.
 #[test]
 fn test_process_code_to_image_too_wide() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input = dir.path().join("post.md");
     fs::write(&input, "```\ncode\n```\n")?;
     let output = dir.path().join("out.md");
@@ -377,7 +379,7 @@ fn test_process_code_to_image_too_wide() -> Result<()> {
                            side and the scale must be at least 1, and each side times the scale \
                            at most 2147483647\n";
     assert_eq!(stderr, expected_stderr);
-    Ok(())
+    dir.close()
 }
 
 /// `xpmd process --action math-to-image` replaces inline math with an inline image, and a `$$`
@@ -386,7 +388,7 @@ fn test_process_code_to_image_too_wide() -> Result<()> {
 fn test_process_math_to_image() -> Result<()> {
     let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let input = root_dir.join("tests/fixtures/math.md");
-    let output_dir = tempfile::tempdir()?;
+    let output_dir = TestDir::new()?;
     let output = output_dir.path().join("post.md");
     let assets = output_dir.path().join("assets");
 
@@ -419,7 +421,7 @@ fn test_process_math_to_image() -> Result<()> {
         let magic = image.get(..PNG_MAGIC.len());
         assert_eq!(magic, Some(PNG_MAGIC.as_slice()), "{name}");
     }
-    Ok(())
+    output_dir.close()
 }
 
 /// `math-to-image` keeps both ends of a formula wider than the window: the image holds the blue
@@ -429,7 +431,7 @@ fn test_process_math_to_image_wide() -> Result<()> {
     let blue_square = r"{\color{blue}\rule{1em}{1em}}";
     let red_square = r"{\color{red}\rule{1em}{1em}}";
     let terms = vec!["x"; 100].join("+");
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input = dir.path().join("post.md");
     fs::write(&input, format!("$${blue_square}+{terms}+{red_square}$$\n"))?;
     let output = dir.path().join("out/post.md");
@@ -452,7 +454,7 @@ fn test_process_math_to_image_wide() -> Result<()> {
     assert!(blue > 0, "the formula lost its start");
     let red = count_pixels(&png, RED)?;
     assert!(red > 0, "the formula lost its end");
-    Ok(())
+    dir.close()
 }
 
 /// `xpmd process --action math-to-image=codecogs` links every formula to the image at the URL where
@@ -461,7 +463,7 @@ fn test_process_math_to_image_wide() -> Result<()> {
 fn test_process_math_to_image_service() -> Result<()> {
     let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let input = root_dir.join("tests/fixtures/math.md");
-    let output_dir = tempfile::tempdir()?;
+    let output_dir = TestDir::new()?;
     let output = output_dir.path().join("post.md");
     let assets = output_dir.path().join("assets");
 
@@ -491,7 +493,7 @@ fn test_process_math_to_image_service() -> Result<()> {
         written.push(entry.file_name());
     }
     assert_eq!(written, Vec::<OsString>::new());
-    Ok(())
+    output_dir.close()
 }
 
 /// `xpmd process --action math-to-img-tag=zhihu` replaces every formula with the `<img>` tag of zhihu's
@@ -500,7 +502,7 @@ fn test_process_math_to_image_service() -> Result<()> {
 fn test_process_math_to_img_tag() -> Result<()> {
     let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let input = root_dir.join("tests/fixtures/math.md");
-    let output_dir = tempfile::tempdir()?;
+    let output_dir = TestDir::new()?;
     let output = output_dir.path().join("post.md");
 
     let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
@@ -525,13 +527,13 @@ fn test_process_math_to_img_tag() -> Result<()> {
         "Done.\n",
     );
     assert_eq!(markdown, expected_markdown);
-    Ok(())
+    output_dir.close()
 }
 
 /// `xpmd process --action drop-front-matter` removes the `---` block at the top of the file.
 #[test]
 fn test_process_drop_front_matter() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input = dir.path().join("post.md");
     fs::write(&input, "---\ntitle: T\n---\n\n# Title\n")?;
     let output = dir.path().join("out/post.md");
@@ -548,13 +550,13 @@ fn test_process_drop_front_matter() -> Result<()> {
 
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(markdown, "# Title\n");
-    Ok(())
+    dir.close()
 }
 
 /// `xpmd process --action append-reference-list` lists the definition a link uses at the end.
 #[test]
 fn test_process_append_reference_list() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input = dir.path().join("post.md");
     fs::write(
         &input,
@@ -577,14 +579,14 @@ fn test_process_append_reference_list() -> Result<()> {
                              Reference:\n\n\
                              - Post : <http://p.com>\n";
     assert_eq!(markdown, expected_markdown);
-    Ok(())
+    dir.close()
 }
 
 /// The reference list holds the URL that `rewrite-link-urls` gives, whether it runs before or after
 /// `append-reference-list`.
 #[test]
 fn test_process_rewrite_reference_list() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input = dir.path().join("post.md");
     fs::write(&input, "See [p][p].\n\n[p]: https://old.com/p \"P\"\n")?;
     let output = dir.path().join("out/post.md");
@@ -612,13 +614,13 @@ fn test_process_rewrite_reference_list() -> Result<()> {
                                  - P : <https://new.com/p>\n";
         assert_eq!(markdown, expected_markdown);
     }
-    Ok(())
+    dir.close()
 }
 
 /// `xpmd process --action math-block-to-one-line` prints a `$$` formula in a list item on one line.
 #[test]
 fn test_process_math_block_to_one_line() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input = dir.path().join("post.md");
     fs::write(&input, "- Sum $$\n  a + b\n  $$\n")?;
     let output = dir.path().join("out/post.md");
@@ -635,14 +637,14 @@ fn test_process_math_block_to_one_line() -> Result<()> {
 
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(markdown, "- Sum $$a + b$$\n");
-    Ok(())
+    dir.close()
 }
 
 /// `xpmd process --action join-math-block` reads a `$$` formula that a blank line splits as one,
 /// with its TeX as written, also for an action listed before it.
 #[test]
 fn test_process_join_math_block() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input = dir.path().join("post.md");
     fs::write(&input, "- $$\n  a\\,b_{i} *c*\n\n  d\n  $$\n")?;
     let output = dir.path().join("out/post.md");
@@ -660,14 +662,14 @@ fn test_process_join_math_block() -> Result<()> {
 
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(markdown, "- $$a\\,b_{i} *c* d$$\n");
-    Ok(())
+    dir.close()
 }
 
 /// `join-math-block` joins a split `$$` formula in each embedded file too, also in a file that an
 /// embedded file embeds, wherever the action is listed.
 #[test]
 fn test_process_embed_join_math_block() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     fs::write(
         dir.path().join("sub.md"),
         "$$\nc\n\nd\n$$\n\n![](inner.md)\n",
@@ -691,13 +693,13 @@ fn test_process_embed_join_math_block() -> Result<()> {
     let markdown = fs::read_to_string(&output)?;
     let expected_markdown = "$$\na\nb\n$$\n\n$$\nc\nd\n$$\n\n$$\ne\nf\n$$\n";
     assert_eq!(markdown, expected_markdown);
-    Ok(())
+    dir.close()
 }
 
 /// `xpmd process --action math-inline-to-text` replaces an inline formula with Unicode text.
 #[test]
 fn test_process_math_inline_to_text() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input = dir.path().join("post.md");
     fs::write(&input, "Let $x^2 \\in \\mathbb{R}$.\n")?;
     let output = dir.path().join("out/post.md");
@@ -714,13 +716,13 @@ fn test_process_math_inline_to_text() -> Result<()> {
 
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(markdown, "Let x² ∈ ℝ.\n");
-    Ok(())
+    dir.close()
 }
 
 /// `xpmd process --action codespan-to-text` writes each code span as escaped text.
 #[test]
 fn test_process_codespan_to_text() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input = dir.path().join("post.md");
     fs::write(&input, "Run `a <b>` now.\n")?;
     let output = dir.path().join("out/post.md");
@@ -737,14 +739,14 @@ fn test_process_codespan_to_text() -> Result<()> {
 
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(markdown, "Run a \\<b\\> now.\n");
-    Ok(())
+    dir.close()
 }
 
 /// `xpmd process` keeps an escaped `\$` escaped, and escapes the `$` of a code span that
 /// `codespan-to-text` turns into text, so neither becomes a formula.
 #[test]
 fn test_process_escaped_dollar() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input = dir.path().join("post.md");
     fs::write(&input, "Price \\$a\\$ and `$x$`.\n")?;
     let output = dir.path().join("out/post.md");
@@ -761,13 +763,13 @@ fn test_process_escaped_dollar() -> Result<()> {
 
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(markdown, "Price \\$a\\$ and \\$x\\$.\n");
-    Ok(())
+    dir.close()
 }
 
 /// `xpmd process --action flatten-lists` writes each list item and quote as a plain paragraph.
 #[test]
 fn test_process_flatten_lists() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input = dir.path().join("post.md");
     fs::write(&input, "- a\n- b\n\n> c\n")?;
     let output = dir.path().join("out/post.md");
@@ -784,14 +786,14 @@ fn test_process_flatten_lists() -> Result<()> {
 
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(markdown, "a\n\nb\n\nc\n");
-    Ok(())
+    dir.close()
 }
 
 /// `xpmd process --action rewrite-image-urls=.. --action rewrite-link-urls=..` rewrites the image
 /// and the link URLs, with any delimiter and Python's `\1`.
 #[test]
 fn test_process_rewrite_urls() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input = dir.path().join("post.md");
     fs::write(&input, "![a](assets/x.png) [b](posts/y.md)\n")?;
     let output = dir.path().join("out/post.md");
@@ -812,7 +814,7 @@ fn test_process_rewrite_urls() -> Result<()> {
     let markdown = fs::read_to_string(&output)?;
     let expected = "![a](https://cdn.com/x.png) [b](https://blog.com/y/)\n";
     assert_eq!(markdown, expected);
-    Ok(())
+    dir.close()
 }
 
 /// `xpmd process --action table-to-html` writes the table as a bare `<table>` of rows.
@@ -820,7 +822,7 @@ fn test_process_rewrite_urls() -> Result<()> {
 fn test_process_table_to_html() -> Result<()> {
     let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let input = root_dir.join("tests/fixtures/table.md");
-    let output_dir = tempfile::tempdir()?;
+    let output_dir = TestDir::new()?;
     let output = output_dir.path().join("post.md");
 
     let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
@@ -855,14 +857,14 @@ fn test_process_table_to_html() -> Result<()> {
         </table>\n\n\
         After the table.\n";
     assert_eq!(markdown, expected_markdown);
-    Ok(())
+    output_dir.close()
 }
 
 /// `embed-markdown` embeds a `.md` image by default; `--embed REGEX` replaces that default, so the
 /// `.md` image stays and the image whose URL REGEX matches is embedded.
 #[test]
 fn test_process_embed() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     fs::write(dir.path().join("a.md"), "A\n")?;
     fs::write(dir.path().join("b.txt"), "B\n")?;
     let input = dir.path().join("post.md");
@@ -889,14 +891,14 @@ fn test_process_embed() -> Result<()> {
         let markdown = fs::read_to_string(&output)?;
         assert_eq!(markdown, expected_markdown);
     }
-    Ok(())
+    dir.close()
 }
 
 /// `xpmd process --action image-to-asset` copies a local image into `--assets` under a name that
 /// hashes its content, and links the copy relative to the output file.
 #[test]
 fn test_process_image_to_asset() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input_dir = dir.path().join("posts");
     fs::create_dir_all(input_dir.join("img"))?;
     fs::write(input_dir.join("img/a.png"), b"PNG-A")?;
@@ -925,14 +927,14 @@ fn test_process_image_to_asset() -> Result<()> {
 
     let copied = fs::read(assets.join("e793c41f42c3-a.png"))?;
     assert_eq!(copied, b"PNG-A");
-    Ok(())
+    dir.close()
 }
 
 /// `image-to-asset` keeps the link to an asset: a second `image-to-asset` keeps the copy that the
 /// first one made, and one after `table-to-image` keeps the table's PNG.
 #[test]
 fn test_process_image_to_asset_keeps_assets() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input_dir = dir.path().join("posts");
     fs::create_dir_all(&input_dir)?;
     fs::write(input_dir.join("pic.svg"), RED_SVG)?;
@@ -956,7 +958,7 @@ fn test_process_image_to_asset_keeps_assets() -> Result<()> {
     ];
     for (input_markdown, actions, expected_markdown, asset) in cases {
         fs::write(&input, input_markdown)?;
-        let output_dir = tempfile::tempdir()?;
+        let output_dir = TestDir::new()?;
         let output = output_dir.path().join("post.md");
 
         let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
@@ -979,15 +981,16 @@ fn test_process_image_to_asset_keeps_assets() -> Result<()> {
         }
         files.sort();
         assert_eq!(files, [asset, "post.md"]);
+        output_dir.close()?;
     }
-    Ok(())
+    dir.close()
 }
 
 /// `image-to-asset` copies the file that an image URL's decoded path names, and links the copy with
 /// each part of its path encoded, also the `#` of `--assets`, and with the URL's query and fragment.
 #[test]
 fn test_process_image_to_asset_url_escapes() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input_dir = dir.path().join("posts");
     fs::create_dir_all(&input_dir)?;
     for name in ["my pic.svg", "图.svg", "100%.svg", "pic.svg"] {
@@ -1039,14 +1042,14 @@ fn test_process_image_to_asset_url_escapes() -> Result<()> {
         "aa5290abd426-图.svg",
     ];
     assert_eq!(copies, expected_copies);
-    Ok(())
+    dir.close()
 }
 
 /// `xpmd process --url-base URL` links the copy as URL plus its path relative to the output file;
 /// a trailing `/` on URL is not doubled.
 #[test]
 fn test_process_url_base() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input_dir = dir.path().join("posts");
     fs::create_dir_all(input_dir.join("img"))?;
     fs::write(input_dir.join("img/a.png"), b"PNG-A")?;
@@ -1071,14 +1074,14 @@ fn test_process_url_base() -> Result<()> {
     let markdown = fs::read_to_string(&output)?;
     let expected = "![a](https://cdn.com/gh/u/r@b/out/assets/e793c41f42c3-a.png)\n";
     assert_eq!(markdown, expected);
-    Ok(())
+    dir.close()
 }
 
 /// With `--url-base`, an `--assets` outside the output file's directory is an error, and `process`
 /// writes nothing.
 #[test]
 fn test_process_url_base_assets_outside() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input = dir.path().join("post.md");
     fs::write(&input, "Text.\n")?;
     let output_dir = dir.path().join("out");
@@ -1109,14 +1112,14 @@ fn test_process_url_base_assets_outside() -> Result<()> {
     assert_eq!(stderr, expected_stderr);
 
     assert!(!output_dir.exists());
-    Ok(())
+    dir.close()
 }
 
 /// `download-images` after `image-to-asset` keeps the link under `--url-base`: it links a file that
 /// `image-to-asset` created, which is not online yet.
 #[test]
 fn test_process_url_base_download_images() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     fs::write(dir.path().join("a.png"), b"PNG-A")?;
     let input = dir.path().join("post.md");
     fs::write(&input, "![a](a.png)\n")?;
@@ -1138,7 +1141,7 @@ fn test_process_url_base_download_images() -> Result<()> {
     let markdown = fs::read_to_string(&output)?;
     let expected = "![a](https://cdn.invalid/out/e793c41f42c3-a.png)\n";
     assert_eq!(markdown, expected);
-    Ok(())
+    dir.close()
 }
 
 /// `download-images` downloads a source image under `--url-base`: only a file that an action
@@ -1148,7 +1151,7 @@ fn test_process_download_images_under_url_base() -> Result<()> {
     let (port, server) = serve_once(b"PNG-A")?;
     let url_base = format!("http://127.0.0.1:{port}/out");
     let url = format!("{url_base}/a.png");
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input = dir.path().join("post.md");
     fs::write(&input, format!("![a]({url})\n"))?;
     let output_dir = dir.path().join("out");
@@ -1177,7 +1180,7 @@ fn test_process_download_images_under_url_base() -> Result<()> {
 
     let downloaded = fs::read(output_dir.join(&name))?;
     assert_eq!(downloaded, b"PNG-A");
-    Ok(())
+    dir.close()
 }
 
 /// Answer one HTTP request on a free port of 127.0.0.1 with `200 OK` and `body`, in a thread.
@@ -1234,7 +1237,7 @@ fn serve_once(body: &'static [u8]) -> Result<(u16, JoinHandle<Result<String>>)> 
 /// `rewrite-link-urls` rewrites the reference list too.
 #[test]
 fn test_process_preset() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     fs::write(dir.path().join("a.png"), b"PNG-A")?;
     let input = dir.path().join("post.md");
     fs::write(
@@ -1262,13 +1265,13 @@ fn test_process_preset() -> Result<()> {
                              Reference:\n\n\
                              - Post : <https://new.com/p>\n";
     assert_eq!(markdown, expected_markdown);
-    Ok(())
+    dir.close()
 }
 
 /// `xpmd process --preset transparent --keep-front-matter` keeps the front matter.
 #[test]
 fn test_process_preset_keep_front_matter() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input = dir.path().join("post.md");
     fs::write(&input, "---\ntitle: T\n---\n\n# Title\n")?;
     let output = dir.path().join("out/post.md");
@@ -1286,7 +1289,7 @@ fn test_process_preset_keep_front_matter() -> Result<()> {
 
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(markdown, "---\ntitle: T\n---\n\n# Title\n");
-    Ok(())
+    dir.close()
 }
 
 /// `xpmd process --refs FILE --preset zhihu` resolves a reference that the markdown does not
@@ -1295,7 +1298,7 @@ fn test_process_preset_keep_front_matter() -> Result<()> {
 /// reference list holds them all.
 #[test]
 fn test_process_refs() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let ref_file = dir.path().join("refs.yaml");
     fs::write(
         &ref_file,
@@ -1329,7 +1332,7 @@ fn test_process_refs() -> Result<()> {
                              - own : <https://own.com>\n\n\
                              - protobuf : <https://pb.com>\n";
     assert_eq!(markdown, expected_markdown);
-    Ok(())
+    dir.close()
 }
 
 /// An embedded file resolves a reference that it does not define with the `--refs` files and the
@@ -1337,7 +1340,7 @@ fn test_process_refs() -> Result<()> {
 /// and for the files that it embeds.
 #[test]
 fn test_process_embed_refs() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let ref_file = dir.path().join("refs.yaml");
     fs::write(
         &ref_file,
@@ -1378,14 +1381,14 @@ fn test_process_embed_refs() -> Result<()> {
                              [b](https://b.invalid/sub) and [c](https://c.invalid/inner).\n\n\
                              Post [b](https://b.invalid/post).\n";
     assert_eq!(markdown, expected_markdown);
-    Ok(())
+    dir.close()
 }
 
 /// `append-reference-list` lists the definitions that the links of an embedded file use: the
 /// file's own and those of `--refs`.
 #[test]
 fn test_process_embed_reference_list() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let ref_file = dir.path().join("refs.yaml");
     fs::write(
         &ref_file,
@@ -1418,7 +1421,7 @@ fn test_process_embed_reference_list() -> Result<()> {
                              - doc : <https://example.invalid/doc>\n\n\
                              - spec : <https://example.invalid/spec>\n";
     assert_eq!(markdown, expected_markdown);
-    Ok(())
+    dir.close()
 }
 
 /// A file embedded in a block quote, and a file that it embeds, keep what each holds: links by
@@ -1427,7 +1430,7 @@ fn test_process_embed_reference_list() -> Result<()> {
 /// definitions of every file.
 #[test]
 fn test_process_embed_nested() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let ref_file = dir.path().join("refs.yaml");
     fs::write(
         &ref_file,
@@ -1483,7 +1486,7 @@ fn test_process_embed_nested() -> Result<()> {
         - inner : <https://example.invalid/inner>\n\n\
         - Spec : <https://example.invalid/spec>\n";
     assert_eq!(markdown, expected_markdown);
-    Ok(())
+    dir.close()
 }
 
 /// Without `-i`, `-o` and `--action`, `xpmd process` reads stdin, and writes only the markdown,
@@ -1506,7 +1509,7 @@ fn test_process_stdin_to_stdout() -> Result<()> {
 /// and of the output, and names the files that the actions create after stdin.
 #[test]
 fn test_process_stdin_to_stdout_files() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     fs::create_dir_all(dir.path().join("img"))?;
     fs::write(dir.path().join("img/a.png"), b"PNG-A")?;
 
@@ -1529,7 +1532,7 @@ fn test_process_stdin_to_stdout_files() -> Result<()> {
     let image = fs::read(dir.path().join("stdin-table-6755bbc6e713.png"))?;
     let magic = image.get(..PNG_MAGIC.len());
     assert_eq!(magic, Some(PNG_MAGIC.as_slice()));
-    Ok(())
+    dir.close()
 }
 
 /// With `-i` and without `-o`, `xpmd process` names the files that the actions create after the
@@ -1538,7 +1541,7 @@ fn test_process_stdin_to_stdout_files() -> Result<()> {
 fn test_process_file_to_stdout() -> Result<()> {
     let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let input = root_dir.join("tests/fixtures/table.md");
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
 
     let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
         .args(["process", "--action", "table-to-image", "-i"])
@@ -1559,14 +1562,14 @@ fn test_process_file_to_stdout() -> Result<()> {
     let image = fs::read(dir.path().join("table-table-ef022588a517.png"))?;
     let magic = image.get(..PNG_MAGIC.len());
     assert_eq!(magic, Some(PNG_MAGIC.as_slice()));
-    Ok(())
+    dir.close()
 }
 
 /// `xpmd process` looks for Chrome and ImageMagick only when an action renders something: with
 /// neither in PATH, a run without actions, or whose actions render nothing, still works.
 #[test]
 fn test_process_without_renderer() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let empty_path = dir.path().join("bin");
     fs::create_dir_all(&empty_path)?;
     let input = dir.path().join("post.md");
@@ -1595,7 +1598,7 @@ fn test_process_without_renderer() -> Result<()> {
         let markdown = fs::read_to_string(&output)?;
         assert_eq!(markdown, expected_markdown);
     }
-    Ok(())
+    dir.close()
 }
 
 /// Without Chrome in PATH, an action that renders fails with the help to install Chrome. macOS
@@ -1603,7 +1606,7 @@ fn test_process_without_renderer() -> Result<()> {
 #[test]
 #[cfg_attr(target_os = "macos", ignore = "macOS finds Chrome outside PATH")]
 fn test_process_renderer_missing() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let empty_path = dir.path().join("bin");
     fs::create_dir_all(&empty_path)?;
     let input = dir.path().join("post.md");
@@ -1626,5 +1629,5 @@ fn test_process_renderer_missing() -> Result<()> {
     let expected_first_line = "Error: Failed to render content. \
                                Make sure Chrome/Chromium is installed and accessible.";
     assert_eq!(first_line, Some(expected_first_line));
-    Ok(())
+    dir.close()
 }

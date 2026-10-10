@@ -4,6 +4,7 @@ use std::process::Command;
 use anyhow::Result;
 
 use super::xpmd_tests::BoundedOutput;
+use super::xpmd_tests::TestDir;
 
 /// Without `-i`, `xpmd render-math-img` reads the TeX from stdin and prints the service's `<img>`
 /// tag; `--inline` leaves out the `\displaystyle` that a display formula gets.
@@ -29,7 +30,7 @@ fn test_render_math_img_reads_stdin() -> Result<()> {
 /// on zhihu.
 #[test]
 fn test_render_math_img_files() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     let input = dir.path().join("sum.tex");
     fs::write(&input, "\\sum_{i=1}^n i\n")?;
     let output = dir.path().join("sum.html");
@@ -52,5 +53,5 @@ fn test_render_math_img_files() -> Result<()> {
         "\n"
     );
     assert_eq!(tag, expected_tag);
-    Ok(())
+    dir.close()
 }

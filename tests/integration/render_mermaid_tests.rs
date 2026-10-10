@@ -8,6 +8,7 @@ use super::process_tests::count_pixels;
 use super::process_tests::BLUE;
 use super::process_tests::RED;
 use super::xpmd_tests::BoundedOutput;
+use super::xpmd_tests::TestDir;
 
 /// Every PNG file starts with these bytes.
 const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
@@ -35,7 +36,7 @@ fn test_render_mermaid_svg_and_png() -> Result<()> {
     assert!(svg.contains(">ok?</"), "{svg}");
     assert!(svg.contains("<style>#d{"), "{svg}");
 
-    let output_dir = tempfile::tempdir()?;
+    let output_dir = TestDir::new()?;
     let output = output_dir.path().join("flow.png");
     let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
         .args(["render-mermaid", "-i"])
@@ -52,7 +53,7 @@ fn test_render_mermaid_svg_and_png() -> Result<()> {
     let png = fs::read(&output)?;
     let magic = png.get(..PNG_MAGIC.len());
     assert_eq!(magic, Some(PNG_MAGIC.as_slice()));
-    Ok(())
+    output_dir.close()
 }
 
 /// A chart wider or taller than the window of the DOM dump, 1000 by 2000 CSS pixels, keeps its
@@ -63,7 +64,7 @@ fn test_render_mermaid_svg_and_png() -> Result<()> {
 /// Mermaid sizes a node by its font, so the sizes and counts are not exact.
 #[test]
 fn test_render_mermaid_wide_and_tall() -> Result<()> {
-    let dir = tempfile::tempdir()?;
+    let dir = TestDir::new()?;
     // Each case ends with the window's side in pixels at scale 2. 10 nodes in a row are about 1900
     // CSS pixels wide, and 36 in a column about 3000 tall.
     let cases = [("wide", "LR", 10, 2000), ("tall", "TB", 36, 4000)];
@@ -101,13 +102,13 @@ fn test_render_mermaid_wide_and_tall() -> Result<()> {
         let red = count_pixels(&output, RED)?;
         assert!(red > 0, "the {name} chart lost its end");
     }
-    Ok(())
+    dir.close()
 }
 
 /// A diagram error is reported with mermaid's message, and nothing is written.
 #[test]
 fn test_render_mermaid_error() -> Result<()> {
-    let output_dir = tempfile::tempdir()?;
+    let output_dir = TestDir::new()?;
     let input = output_dir.path().join("bad.mmd");
     fs::write(&input, "not a diagram\n")?;
 
@@ -124,5 +125,5 @@ fn test_render_mermaid_error() -> Result<()> {
         stderr.contains("mermaid: No diagram type detected matching given configuration for text: not a diagram"),
         "{stderr}"
     );
-    Ok(())
+    output_dir.close()
 }
