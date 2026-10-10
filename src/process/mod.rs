@@ -21,6 +21,8 @@ pub mod rewrite_urls;
 pub mod table_to_html;
 pub mod table_to_image;
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::Component;
 use std::path::Path;
 use std::path::PathBuf;
@@ -60,41 +62,45 @@ pub struct ActionContext {
     pub embed_patterns: Vec<Regex>,
     /// Renders an HTML page to a PNG.
     pub renderer: LazyRenderer,
+    /// The file of each asset, a file that an action created or copied, by the link to it;
+    /// [`ActionContext::link_to`] adds them. A link `//x` is keyed as `https://x`, the URL that
+    /// `download-images` sees.
+    pub assets: RefCell<HashMap<String, PathBuf>>,
 }
 
 impl ActionContext {
     /// The link to `file`, which an action created or copied: the path of `file` relative to
-    /// `output_dir`, behind `url_base` and one `/` when there is a URL base.
+    /// `output_dir`, behind `url_base` and one `/` when there is a URL base. It adds `file` to
+    /// `assets`, so a later action finds the file by the link.
     pub fn link_to(&self, file: &Path) -> anyhow::Result<String> {
         let path = relative_url(&self.output_dir, file)?;
-        let Some(url_base) = &self.url_base else {
-            return Ok(path);
+        let link = match &self.url_base {
+            Some(url_base) => {
+                let url_base = url_base.trim_end_matches('/');
+                format!("{url_base}/{path}")
+            }
+            None => path,
         };
-        let url_base = url_base.trim_end_matches('/');
-        Ok(format!("{url_base}/{path}"))
+        let key = with_scheme(&link);
+        self.assets.borrow_mut().insert(key, file.to_path_buf());
+        Ok(link)
     }
 
-    /// Whether `url` lies under `url_base`, as a link that `link_to` made does.
-    pub fn is_under_url_base(&self, url: &str) -> bool {
-        self.path_under_url_base(url).is_some()
-    }
-
-    /// The path relative to `output_dir` that `url` names, when `url` lies under `url_base`.
-    fn path_under_url_base<'u>(&self, url: &'u str) -> Option<&'u str> {
-        let url_base = self.url_base.as_ref()?;
-        let prefix = format!("{}/", url_base.trim_end_matches('/'));
-        url.strip_prefix(&prefix)
+    /// Whether `url` is the link to an asset, a file that an action created or copied.
+    pub fn is_asset(&self, url: &str) -> bool {
+        let key = with_scheme(url);
+        self.assets.borrow().contains_key(&key)
     }
 
     /// The local file that the image or link URL `url` in the tree names; None for a URL that names
     /// no local file, such as `https://x`, `//x` or `data:x`.
     ///
-    /// A URL under `url_base`, and a relative URL whose file is in `output_dir`, name a file in
-    /// `output_dir`, as a link that `link_to` made does. A root path `/x`, and any other relative URL,
-    /// name a file in `input_dir`, as a link in the input does.
+    /// The link to an asset names the file that an action created or copied. A root path `/x`, and
+    /// any other relative URL, name a file in `input_dir`, as a link in the input does.
     pub(crate) fn local_file(&self, url: &str) -> Option<PathBuf> {
-        if let Some(path) = self.path_under_url_base(url) {
-            return Some(self.output_dir.join(path));
+        let key = with_scheme(url);
+        if let Some(file) = self.assets.borrow().get(&key) {
+            return Some(file.clone());
         }
         if embed_markdown::is_root_path(url) {
             let file = embed_markdown::resolve(&self.input_dir, &self.input_dir, url);
@@ -102,10 +108,6 @@ impl ActionContext {
         }
         if !embed_markdown::is_relative(url) {
             return None;
-        }
-        let in_output = self.output_dir.join(url);
-        if in_output.exists() {
-            return Some(in_output);
         }
         Some(self.input_dir.join(url))
     }

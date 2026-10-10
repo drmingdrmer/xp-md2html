@@ -18,11 +18,11 @@ const HASH_LEN: usize = 12;
 /// The largest response body a download accepts; `ureq` stops reading at this size.
 const MAX_IMAGE_BYTES: u64 = 100 * 1024 * 1024;
 
-/// Download every `http(s)://` image under `root` into `ctx.assets_dir` and link the copy; an image
-/// under `ctx.url_base` is a file that an action created, so it keeps its URL.
+/// Download every `http(s)://` image under `root` into `ctx.assets_dir` and link the copy; the link
+/// to an asset, such as a copy under `ctx.url_base` that is not online yet, keeps its URL.
 pub fn apply(root: Node<'_>, ctx: &ActionContext) -> anyhow::Result<()> {
     relink_remote_images(root, |url| {
-        if ctx.is_under_url_base(url) {
+        if ctx.is_asset(url) {
             return Ok(url.to_string());
         }
         let path = download(url, &ctx.assets_dir)?;

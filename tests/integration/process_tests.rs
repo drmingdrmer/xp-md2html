@@ -1,12 +1,21 @@
 use std::ffi::OsString;
 use std::fs;
+use std::io;
+use std::io::Read;
 use std::io::Write;
+use std::net::TcpListener;
 use std::path::Path;
 use std::process::Command;
 use std::process::Stdio;
+use std::thread;
+use std::thread::JoinHandle;
+use std::time::Duration;
+use std::time::Instant;
 
 use anyhow::Result;
 use image::Rgba;
+use sha2::Digest;
+use sha2::Sha256;
 
 /// Every PNG file starts with these bytes.
 const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
@@ -14,6 +23,9 @@ const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
 /// A red image of 40 by 30 pixels.
 const RED_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="30"><rect width="40" height="30" fill="red"/></svg>"#;
 pub(crate) const RED: Rgba<u8> = Rgba([255, 0, 0, 255]);
+
+/// How long the server of `serve_once` waits for a request, and then for each read.
+const SERVER_WAIT: Duration = Duration::from_secs(10);
 
 /// A blue image of 20 by 10 pixels.
 const BLUE_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"><rect width="20" height="10" fill="blue"/></svg>"#;
@@ -140,6 +152,43 @@ fn test_process_table_to_image_copied_image() -> Result<()> {
         let red = count_pixels(&png, RED)?;
         assert_eq!(red, 40 * 30, "{expected_markdown}");
     }
+    Ok(())
+}
+
+/// `table-to-image` draws a table's image from the input's directory, also when the output's
+/// directory holds another file of that name.
+#[test]
+fn test_process_table_to_image_output_collision() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let input_dir = dir.path().join("posts");
+    fs::create_dir_all(&input_dir)?;
+    fs::write(input_dir.join("pic.svg"), RED_SVG)?;
+    let input = input_dir.join("post.md");
+    fs::write(&input, "| p |\n|---|\n| ![p](pic.svg) |\n")?;
+    let output_dir = dir.path().join("out");
+    fs::create_dir_all(&output_dir)?;
+    fs::write(output_dir.join("pic.svg"), BLUE_SVG)?;
+    let output = output_dir.join("post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "table-to-image", "--scale", "1"])
+        .arg("-i")
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    assert_eq!(markdown, "![](post-table-4d9d4f8cfc27.png)\n");
+
+    let png = output_dir.join("post-table-4d9d4f8cfc27.png");
+    let red = count_pixels(&png, RED)?;
+    assert_eq!(red, 40 * 30);
+    let blue = count_pixels(&png, BLUE)?;
+    assert_eq!(blue, 0);
     Ok(())
 }
 
@@ -774,6 +823,61 @@ fn test_process_image_to_asset() -> Result<()> {
     Ok(())
 }
 
+/// `image-to-asset` keeps the link to an asset: a second `image-to-asset` keeps the copy that the
+/// first one made, and one after `table-to-image` keeps the table's PNG.
+#[test]
+fn test_process_image_to_asset_keeps_assets() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let input_dir = dir.path().join("posts");
+    fs::create_dir_all(&input_dir)?;
+    fs::write(input_dir.join("pic.svg"), RED_SVG)?;
+    let input = input_dir.join("post.md");
+
+    // The input markdown, the `--action` arguments, the markdown that they give, and the one asset
+    // that they create.
+    let cases = [
+        (
+            "![p](pic.svg)\n",
+            ["image-to-asset", "image-to-asset"],
+            "![p](aa5290abd426-pic.svg)\n",
+            "aa5290abd426-pic.svg",
+        ),
+        (
+            "| p |\n|---|\n| 1 |\n",
+            ["table-to-image", "image-to-asset"],
+            "![](post-table-37a852938d98.png)\n",
+            "post-table-37a852938d98.png",
+        ),
+    ];
+    for (input_markdown, actions, expected_markdown, asset) in cases {
+        fs::write(&input, input_markdown)?;
+        let output_dir = tempfile::tempdir()?;
+        let output = output_dir.path().join("post.md");
+
+        let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+            .args(["process", "--action", actions[0], "--action", actions[1]])
+            .arg("-i")
+            .arg(&input)
+            .arg("-o")
+            .arg(&output)
+            .output()?;
+
+        let stderr = String::from_utf8(result.stderr)?;
+        assert_eq!(stderr, "");
+
+        let markdown = fs::read_to_string(&output)?;
+        assert_eq!(markdown, expected_markdown);
+
+        let mut files = Vec::new();
+        for entry in fs::read_dir(output_dir.path())? {
+            files.push(entry?.file_name());
+        }
+        files.sort();
+        assert_eq!(files, [asset, "post.md"]);
+    }
+    Ok(())
+}
+
 /// `xpmd process --url-base URL` links the copy as URL plus its path relative to the output file;
 /// a trailing `/` on URL is not doubled.
 #[test]
@@ -871,6 +975,94 @@ fn test_process_url_base_download_images() -> Result<()> {
     let expected = "![a](https://cdn.invalid/out/e793c41f42c3-a.png)\n";
     assert_eq!(markdown, expected);
     Ok(())
+}
+
+/// `download-images` downloads a source image under `--url-base`: only a file that an action
+/// created or copied keeps its link there.
+#[test]
+fn test_process_download_images_under_url_base() -> Result<()> {
+    let (port, server) = serve_once(b"PNG-A")?;
+    let url_base = format!("http://127.0.0.1:{port}/out");
+    let url = format!("{url_base}/a.png");
+    let dir = tempfile::tempdir()?;
+    let input = dir.path().join("post.md");
+    fs::write(&input, format!("![a]({url})\n"))?;
+    let output_dir = dir.path().join("out");
+    let output = output_dir.join("post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "download-images", "--url-base"])
+        .arg(&url_base)
+        .arg("-i")
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let request_line = server.join().unwrap()?;
+    assert_eq!(request_line, "GET /out/a.png HTTP/1.1");
+
+    let digest = Sha256::digest(url.as_bytes());
+    let hash = format!("{digest:x}");
+    let name = format!("{}-a.png", &hash[..12]);
+    let markdown = fs::read_to_string(&output)?;
+    assert_eq!(markdown, format!("![a]({url_base}/{name})\n"));
+
+    let downloaded = fs::read(output_dir.join(&name))?;
+    assert_eq!(downloaded, b"PNG-A");
+    Ok(())
+}
+
+/// Answer one HTTP request on a free port of 127.0.0.1 with `200 OK` and `body`, in a thread.
+/// Return the port and the thread, which returns the request line, or an error when no request
+/// comes within `SERVER_WAIT` or the client closes the connection before the request ends.
+fn serve_once(body: &'static [u8]) -> Result<(u16, JoinHandle<Result<String>>)> {
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    let port = listener.local_addr()?.port();
+    // A non-blocking accept lets the thread give up when no request comes.
+    listener.set_nonblocking(true)?;
+
+    let server = thread::spawn(move || -> Result<String> {
+        let start = Instant::now();
+        let mut stream = loop {
+            match listener.accept() {
+                Ok((stream, _)) => break stream,
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    if start.elapsed() > SERVER_WAIT {
+                        anyhow::bail!("No request came within {SERVER_WAIT:?}");
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) => return Err(error.into()),
+            }
+        };
+        stream.set_nonblocking(false)?;
+        stream.set_read_timeout(Some(SERVER_WAIT))?;
+
+        let mut request = Vec::new();
+        let mut chunk = [0u8; 1024];
+        while !request.ends_with(b"\r\n\r\n") {
+            let n = stream.read(&mut chunk)?;
+            if n == 0 {
+                anyhow::bail!("The client closed the connection before the request ended");
+            }
+            request.extend_from_slice(&chunk[..n]);
+        }
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        );
+        stream.write_all(head.as_bytes())?;
+        stream.write_all(body)?;
+
+        let request = String::from_utf8(request)?;
+        let request_line = request.lines().next().unwrap_or_default();
+        Ok(request_line.to_string())
+    });
+    Ok((port, server))
 }
 
 /// `xpmd process --preset github` drops the front matter, copies the image, prints the `$$` formula

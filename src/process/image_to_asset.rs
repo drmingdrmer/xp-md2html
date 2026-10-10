@@ -16,9 +16,13 @@ use super::ActionContext;
 /// How many hex digits of the content's hash the file name keeps.
 const HASH_LEN: usize = 12;
 
-/// Copy every local image under `root` into `ctx.assets_dir` and link the copy.
+/// Copy every local image under `root` into `ctx.assets_dir` and link the copy; the link to an
+/// asset, a file that an action created or copied, keeps its URL.
 pub fn apply(root: Node<'_>, ctx: &ActionContext) -> anyhow::Result<()> {
     relink_local_images(root, |url| {
+        if ctx.is_asset(url) {
+            return Ok(url.to_string());
+        }
         let path = copy(url, &ctx.input_dir, &ctx.assets_dir)?;
         ctx.link_to(&path)
     })

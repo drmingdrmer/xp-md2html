@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::fs;
 use std::io;
 use std::io::Read;
@@ -642,6 +643,7 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         refs,
         embed_patterns,
         renderer,
+        assets: RefCell::default(),
     };
 
     // The preset's actions run first, so an `--action` such as `rewrite-link-urls` sees their links.
