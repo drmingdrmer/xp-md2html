@@ -4,6 +4,10 @@ use std::process::Command;
 
 use anyhow::Result;
 
+use super::process_tests::count_pixels;
+use super::process_tests::BLUE;
+use super::process_tests::RED;
+
 /// Every PNG file starts with these bytes.
 const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
 
@@ -52,5 +56,41 @@ fn test_render_math_svg_and_png() -> Result<()> {
     let png = fs::read(&output)?;
     let magic = png.get(..PNG_MAGIC.len());
     assert_eq!(magic, Some(PNG_MAGIC.as_slice()));
+    Ok(())
+}
+
+/// A formula wider or taller than the window of the DOM dump keeps both ends: the image holds the
+/// blue square at its start and the red square at its end.
+#[test]
+fn test_render_math_wide_and_tall() -> Result<()> {
+    let blue_square = r"{\color{blue}\rule{1em}{1em}}";
+    let red_square = r"{\color{red}\rule{1em}{1em}}";
+    let terms = vec!["x"; 100].join("+");
+    let wide = [blue_square, &terms, red_square].join("+");
+    let rows = vec!["x"; 200].join(r"\\");
+    let column = [blue_square, &rows, red_square].join(r"\\");
+    let tall = format!(r"\begin{{array}}{{c}}{column}\end{{array}}");
+
+    let dir = tempfile::tempdir()?;
+    for (name, tex) in [("wide", wide), ("tall", tall)] {
+        let input = dir.path().join(format!("{name}.tex"));
+        fs::write(&input, tex)?;
+        let output = dir.path().join(format!("{name}.png"));
+
+        let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+            .args(["render-math", "--scale", "1", "-i"])
+            .arg(&input)
+            .arg("-o")
+            .arg(&output)
+            .output()?;
+
+        let stderr = String::from_utf8(result.stderr)?;
+        assert_eq!(stderr, "");
+
+        let blue = count_pixels(&output, BLUE)?;
+        assert!(blue > 0, "the {name} formula lost its start");
+        let red = count_pixels(&output, RED)?;
+        assert!(red > 0, "the {name} formula lost its end");
+    }
     Ok(())
 }

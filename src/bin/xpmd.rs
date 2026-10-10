@@ -28,7 +28,7 @@ use xp_md2html::render::code::DEFAULT_THEME;
 use xp_md2html::render::graphviz::graphviz_to_svg;
 use xp_md2html::render::markdown::markdown_page;
 use xp_md2html::render::markdown::markdown_to_html;
-use xp_md2html::render::math::math_page;
+use xp_md2html::render::math::math_to_image;
 use xp_md2html::render::math::math_to_svg;
 use xp_md2html::render::math_img::math_img_tag;
 use xp_md2html::render::math_img::MathService;
@@ -272,7 +272,7 @@ struct RenderMarkdownArgs {
     bare: bool,
 }
 
-/// The window that a formula is rendered in; the trim cuts the image down to the formula.
+/// The window of the DOM dump that draws a formula or a diagram; an image gets one that fits.
 const MATH_WINDOW_WIDTH: u32 = 1000;
 const MATH_WINDOW_HEIGHT: u32 = 2000;
 
@@ -431,7 +431,7 @@ fn render_math_command(args: RenderMathArgs) -> Result<()> {
         svg.push('\n');
         svg.into_bytes()
     } else {
-        renderer.render_markup(&math_page(&tex, display))?
+        math_to_image(&renderer, &tex, display)?
     };
 
     write_output(output.as_deref(), &data)

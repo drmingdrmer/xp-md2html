@@ -5,7 +5,8 @@ use anyhow::Context;
 
 use crate::render::chrome::ChromeRenderer;
 
-/// The pixels around the SVG in the page of [`svg_page`]; the trim removes them again.
+/// The pixels around the SVG in the page of [`svg_page`], and around the formula in the page of
+/// [`math_page`](crate::render::math::math_page); the trim removes them again.
 pub const PADDING: u32 = 8;
 
 /// The CSS pixels in one point: the SVG that Graphviz makes gives its size in points.

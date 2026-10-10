@@ -14,7 +14,7 @@ use sha2::Sha256;
 use super::code_to_image::MATH_LANG;
 use super::mermaid_to_image::replace_code_blocks;
 use super::ActionContext;
-use crate::render::math::math_page;
+use crate::render::math::math_to_image;
 use crate::render::math_img::math_url;
 use crate::render::math_img::MathService;
 
@@ -89,7 +89,7 @@ fn formula_of(node: Node<'_>) -> Option<(String, bool)> {
 /// return the link to the PNG.
 fn render(tex: &str, display: bool, ctx: &ActionContext) -> anyhow::Result<String> {
     let renderer = ctx.renderer.get()?;
-    let png = renderer.render_markup(&math_page(tex, display))?;
+    let png = math_to_image(renderer, tex, display)?;
 
     // The display style draws some formulas bigger, so the name hashes the delimiters too.
     let markdown = if display {

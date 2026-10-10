@@ -13,11 +13,11 @@ const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
 
 /// A red image of 40 by 30 pixels.
 const RED_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="40" height="30"><rect width="40" height="30" fill="red"/></svg>"#;
-const RED: Rgba<u8> = Rgba([255, 0, 0, 255]);
+pub(crate) const RED: Rgba<u8> = Rgba([255, 0, 0, 255]);
 
 /// A blue image of 20 by 10 pixels.
 const BLUE_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"><rect width="20" height="10" fill="blue"/></svg>"#;
-const BLUE: Rgba<u8> = Rgba([0, 0, 255, 255]);
+pub(crate) const BLUE: Rgba<u8> = Rgba([0, 0, 255, 255]);
 
 /// `xpmd process --action table-to-image` writes the PNG into `--assets` and links it relative to the output file.
 #[test]
@@ -144,7 +144,7 @@ fn test_process_table_to_image_copied_image() -> Result<()> {
 }
 
 /// How many pixels of the PNG at `path` have `color`.
-fn count_pixels(path: &Path, color: Rgba<u8>) -> Result<usize> {
+pub(crate) fn count_pixels(path: &Path, color: Rgba<u8>) -> Result<usize> {
     let image = image::open(path)?;
     let rgba = image.to_rgba8();
     let pixels = rgba.pixels();
@@ -303,6 +303,39 @@ fn test_process_math_to_image() -> Result<()> {
         let magic = image.get(..PNG_MAGIC.len());
         assert_eq!(magic, Some(PNG_MAGIC.as_slice()), "{name}");
     }
+    Ok(())
+}
+
+/// `math-to-image` keeps both ends of a formula wider than the window: the image holds the blue
+/// square at its start and the red square at its end.
+#[test]
+fn test_process_math_to_image_wide() -> Result<()> {
+    let blue_square = r"{\color{blue}\rule{1em}{1em}}";
+    let red_square = r"{\color{red}\rule{1em}{1em}}";
+    let terms = vec!["x"; 100].join("+");
+    let dir = tempfile::tempdir()?;
+    let input = dir.path().join("post.md");
+    fs::write(&input, format!("$${blue_square}+{terms}+{red_square}$$\n"))?;
+    let output = dir.path().join("out/post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "math-to-image", "--scale", "1", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    assert_eq!(markdown, "![](post-math-eb057363ada7.png)\n");
+
+    let png = dir.path().join("out/post-math-eb057363ada7.png");
+    let blue = count_pixels(&png, BLUE)?;
+    assert!(blue > 0, "the formula lost its start");
+    let red = count_pixels(&png, RED)?;
+    assert!(red > 0, "the formula lost its end");
     Ok(())
 }
 
