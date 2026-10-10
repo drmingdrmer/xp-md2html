@@ -26,3 +26,4 @@ caseless = "0.2"
 [dev-dependencies]
 image-compare = "0.4"
 image = "0.25"
+pdf-extract = "0.12"

@@ -5,9 +5,8 @@ use anyhow::Result;
 use xp_md2html::render::chrome::ChromeRenderer;
 use xp_md2html::render::chrome::RenderConfig;
 
-/// A PDF that embeds a font file draws its text as text; a screenshot PDF holds only an image.
-const EMBEDDED_FONT: &[u8] = b"/FontFile";
-
+/// The PDF draws the page's text as text, which a screenshot PDF would hold only as an image: the
+/// words of the PDF's text are those of the heading and the paragraph of `simple.html`.
 #[test]
 fn test_pdf_keeps_text() -> Result<()> {
     let input_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/simple.html");
@@ -24,7 +23,11 @@ fn test_pdf_keeps_text() -> Result<()> {
     let renderer = ChromeRenderer::new(config)?;
     let pdf = renderer.render_markup(&input)?;
 
-    let embeds_font = pdf.windows(EMBEDDED_FONT.len()).any(|w| w == EMBEDDED_FONT);
-    assert!(embeds_font, "the PDF embeds no font");
+    let text = pdf_extract::extract_text_from_mem(&pdf)?;
+    let words: Vec<&str> = text.split_whitespace().collect();
+    let expected_words = [
+        "Hello", "World", "This", "is", "a", "simple", "test", "page.",
+    ];
+    assert_eq!(words, expected_words);
     Ok(())
 }
