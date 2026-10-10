@@ -267,6 +267,47 @@ fn test_render_kills_hanging_chrome() -> Result<()> {
     dir.close()
 }
 
+/// `-o` in a missing directory creates the directory; each command writes there the bytes that it
+/// prints to stdout without `-o`.
+#[test]
+fn test_output_creates_directory() -> Result<()> {
+    let dir = TestDir::new()?;
+    let input = dir.path().join("in.md");
+    fs::write(&input, "# T\n")?;
+    // Without `--assets`, `process` creates the `-o` directory as its assets directory.
+    let assets_dir = dir.path().join("assets");
+    let assets = assets_dir
+        .to_str()
+        .context("The test directory is not UTF-8")?;
+
+    let commands: [&[&str]; 4] = [
+        &["render-code"],
+        &["render-markdown"],
+        &["render-math-img", "--service", "codecogs"],
+        &["process", "--assets", assets],
+    ];
+    for command in commands {
+        let printed = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+            .args(command)
+            .arg("-i")
+            .arg(&input)
+            .output_ok()?;
+
+        let output = dir.path().join(command[0]).join("sub/out");
+        Command::new(env!("CARGO_BIN_EXE_xpmd"))
+            .args(command)
+            .arg("-i")
+            .arg(&input)
+            .arg("-o")
+            .arg(&output)
+            .output_ok()?;
+
+        let written = fs::read(&output)?;
+        assert_eq!(written, printed.stdout, "{command:?}");
+    }
+    dir.close()
+}
+
 /// A failed run is an error that names the command, with its exit status and its stderr.
 #[test]
 fn test_output_ok_fails() -> Result<()> {

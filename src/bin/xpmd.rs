@@ -358,12 +358,6 @@ fn render_command(args: RenderArgs) -> Result<()> {
 
     let format = resolve_format(format.as_deref(), output.as_deref())?;
 
-    // Create output directory if it doesn't exist
-    if let Some(parent) = output.as_deref().and_then(Path::parent) {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create output directory: {}", parent.display()))?;
-    }
-
     // Render using Chrome
     let config = RenderConfig {
         mime: mime_type,
@@ -516,13 +510,18 @@ fn read_input(path: Option<&Path>) -> Result<String> {
         .with_context(|| format!("Failed to read input file: {}", path.display()))
 }
 
-/// Write `data` to `path`, or to stdout when there is no path.
+/// Write `data` to `path`, after creating the missing parent directories, or to stdout when there
+/// is no path.
 fn write_output(path: Option<&Path>, data: &[u8]) -> Result<()> {
     let Some(path) = path else {
         return io::stdout()
             .write_all(data)
             .context("Failed to write stdout");
     };
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("Failed to create output directory: {}", parent.display()))?;
+    }
     fs::write(path, data)
         .with_context(|| format!("Failed to write output file: {}", path.display()))
 }
@@ -613,12 +612,6 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         }
     }
 
-    fs::create_dir_all(&output_dir).with_context(|| {
-        format!(
-            "Failed to create output directory: {}",
-            output_dir.display()
-        )
-    })?;
     fs::create_dir_all(&assets_dir).with_context(|| {
         format!(
             "Failed to create assets directory: {}",
