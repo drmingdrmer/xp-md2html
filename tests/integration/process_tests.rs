@@ -1261,6 +1261,55 @@ fn test_process_refs() -> Result<()> {
     Ok(())
 }
 
+/// An embedded file resolves a reference that it does not define with the `--refs` files and the
+/// front matter of each file that embeds it, and its own front matter replaces those for itself
+/// and for the files that it embeds.
+#[test]
+fn test_process_embed_refs() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let ref_file = dir.path().join("refs.yaml");
+    fs::write(
+        &ref_file,
+        "universal:\n  doc: https://example.invalid/doc\n",
+    )?;
+    fs::write(
+        dir.path().join("sub.md"),
+        "---\nrefs:\n  b: https://b.invalid/sub\n---\n\n[doc], [a] and [b].\n\n![](inner.md)\n",
+    )?;
+    fs::write(
+        dir.path().join("inner.md"),
+        "[b] and [c].\n\n[c]: https://c.invalid/inner\n",
+    )?;
+    let input = dir.path().join("post.md");
+    fs::write(
+        &input,
+        "---\nrefs:\n  a: https://a.invalid/post\n  b: https://b.invalid/post\n---\n\n\
+         ![](sub.md)\n\nPost [b].\n",
+    )?;
+    let output = dir.path().join("out/post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "embed-markdown"])
+        .args(["--action", "drop-front-matter", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .arg("--refs")
+        .arg(&ref_file)
+        .output()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let expected_markdown = "[doc](https://example.invalid/doc), [a](https://a.invalid/post) \
+                             and [b](https://b.invalid/sub).\n\n\
+                             [b](https://b.invalid/sub) and [c](https://c.invalid/inner).\n\n\
+                             Post [b](https://b.invalid/post).\n";
+    assert_eq!(markdown, expected_markdown);
+    Ok(())
+}
+
 /// Without `-i`, `-o` and `--action`, `xpmd process` reads stdin, and writes only the markdown,
 /// parsed and printed again, to stdout.
 #[test]

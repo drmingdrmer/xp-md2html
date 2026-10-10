@@ -323,6 +323,14 @@ pub fn gfm_math_options() -> Options<'static> {
     options
 }
 
+/// [`gfm_math_options`] with the callback that resolves a reference that the markdown does not
+/// define with `refs`.
+pub(crate) fn parse_options(refs: &Refs) -> Options<'static> {
+    let mut options = gfm_math_options();
+    options.parse.broken_link_callback = Some(refs.broken_link_callback());
+    options
+}
+
 /// An image of `url` without alt text, the inline that replaces a formula.
 pub(crate) fn image_node<'a>(arena: &'a Arena<'a>, url: String) -> Node<'a> {
     let link = NodeLink {
@@ -346,8 +354,7 @@ pub fn process_markdown(
     actions: &[Action],
     ctx: &ActionContext,
 ) -> anyhow::Result<String> {
-    let mut options = gfm_math_options();
-    options.parse.broken_link_callback = Some(ctx.refs.broken_link_callback());
+    let options = parse_options(&ctx.refs);
     let joins = actions.contains(&Action::JoinMathBlock);
     let markdown = if joins {
         join_math_block::join(markdown)

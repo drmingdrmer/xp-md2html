@@ -39,6 +39,8 @@ struct Definition {
 pub struct Refs {
     /// The definitions by the label as comrak looks it up; a later one replaces an earlier one.
     definitions: BTreeMap<String, Definition>,
+    /// The platform whose lists apply, also in the front matter of an embedded file.
+    platform: Option<String>,
 }
 
 impl Refs {
@@ -51,10 +53,23 @@ impl Refs {
         markdown: &str,
         platform: Option<&str>,
     ) -> anyhow::Result<Self> {
-        let mut refs = Self::default();
+        let mut refs = Self {
+            platform: platform.map(str::to_string),
+            ..Self::default()
+        };
         for path in ref_files {
             refs.add_file(path, platform)?;
         }
+        refs.add_front_matter(markdown, platform)?;
+        Ok(refs)
+    }
+
+    /// The definitions for an embedded file whose content is `markdown`: these definitions, then
+    /// the definitions of its front matter as [`Refs::load`] adds them, so its front matter
+    /// replaces a definition of the same label.
+    pub fn with_front_matter(&self, markdown: &str) -> anyhow::Result<Self> {
+        let mut refs = self.clone();
+        let platform = self.platform.as_deref();
         refs.add_front_matter(markdown, platform)?;
         Ok(refs)
     }
@@ -310,6 +325,25 @@ mod tests {
         // Front matter that is not a mapping holds no refs.
         let refs = Refs::load(&[], "---\nword\n---\n", None)?;
         assert_eq!(refs, Refs::default());
+        Ok(())
+    }
+
+    /// An embedded file's front matter replaces a definition of the same label, also in its
+    /// `platform_refs` list of the platform that `Refs::load` got.
+    #[test]
+    fn test_with_front_matter() -> anyhow::Result<()> {
+        let outer = "---\nrefs:\n  a: http://o/a\n  b: http://o/b\n---\n";
+        let refs = Refs::load(&[], outer, Some("zhihu"))?;
+
+        let inner =
+            "---\nrefs:\n  b: http://i/b\nplatform_refs:\n  zhihu:\n    c: http://iz/c\n---\n";
+        let embedded = refs.with_front_matter(inner)?;
+
+        let text = embedded.append_definitions("");
+        assert_eq!(
+            text,
+            "\n\n[a]: http://o/a\n[b]: http://i/b\n[c]: http://iz/c\n"
+        );
         Ok(())
     }
 

@@ -11,6 +11,7 @@ use comrak::Arena;
 use comrak::Node;
 use fancy_regex::Regex;
 
+use super::refs::Refs;
 use super::ActionContext;
 
 /// The regex of the image URLs that md2zhihu embeds when its `--embed` names none: every URL that
@@ -21,12 +22,23 @@ pub const DEFAULT_PATTERN: &str = "[.]md$";
 /// `ctx.embed_patterns` matches with the content of the file at the URL.
 pub fn apply<'a>(arena: &'a Arena<'a>, root: Node<'a>, ctx: &ActionContext) -> anyhow::Result<()> {
     let dir = &ctx.input_dir;
-    embed(arena, root, dir, dir, &ctx.embed_patterns, &mut Vec::new())
+    embed(
+        arena,
+        root,
+        dir,
+        dir,
+        &ctx.embed_patterns,
+        &ctx.refs,
+        &mut Vec::new(),
+    )
 }
 
 /// Embed into the tree under `root`, whose file sits in `base_dir`; `/x` resolves against `root_dir`,
 /// the input file's directory. A paragraph is embedded when it holds only an image whose URL a regex
 /// of `patterns` matches somewhere.
+///
+/// `refs` resolves a reference that the file under `root` does not define; an embedded file's front
+/// matter adds to it for that file, as [`Refs::with_front_matter`] says.
 ///
 /// `chain` holds the canonical paths of the files being embedded, outermost first, to catch a cycle.
 /// The embedded file's own embeds are resolved first, then its image and link URLs are rebased to
@@ -37,6 +49,7 @@ pub fn embed<'a>(
     root_dir: &Path,
     base_dir: &Path,
     patterns: &[Regex],
+    refs: &Refs,
     chain: &mut Vec<PathBuf>,
 ) -> anyhow::Result<()> {
     // Edits while walking would confuse the walk, so collect the paragraphs first.
@@ -61,11 +74,22 @@ pub fn embed<'a>(
             .parent()
             .with_context(|| format!("Embedded path has no directory: {}", path.display()))?;
 
-        let options = super::gfm_math_options();
+        let refs = refs
+            .with_front_matter(&text)
+            .with_context(|| format!("Failed to load the refs of: {}", path.display()))?;
+        let options = super::parse_options(&refs);
         let embedded = comrak::parse_document(arena, &text, &options);
 
         chain.push(identity);
-        embed(arena, embedded, root_dir, embedded_dir, patterns, chain)?;
+        embed(
+            arena,
+            embedded,
+            root_dir,
+            embedded_dir,
+            patterns,
+            &refs,
+            chain,
+        )?;
         chain.pop();
         rebase_urls(embedded, embedded_dir, base_dir)?;
 
@@ -284,7 +308,8 @@ mod tests {
 
         let patterns = [Regex::new("[.]txt$")?, Regex::new("inc")?];
         let path = dir.path();
-        embed(&arena, root, path, path, &patterns, &mut Vec::new())?;
+        let refs = Refs::default();
+        embed(&arena, root, path, path, &patterns, &refs, &mut Vec::new())?;
 
         let mut out = String::new();
         comrak::format_commonmark(root, &options, &mut out)?;
@@ -320,6 +345,7 @@ mod tests {
     /// `embed` into a file in `dir` with md2zhihu's default regex, which embeds every `.md` URL.
     fn embed_md<'a>(arena: &'a Arena<'a>, root: Node<'a>, dir: &Path) -> anyhow::Result<()> {
         let patterns = [Regex::new(DEFAULT_PATTERN)?];
-        embed(arena, root, dir, dir, &patterns, &mut Vec::new())
+        let refs = Refs::default();
+        embed(arena, root, dir, dir, &patterns, &refs, &mut Vec::new())
     }
 }

@@ -156,7 +156,7 @@ struct ProcessArgs {
     #[arg(long, requires = "preset")]
     keep_front_matter: bool,
 
-    /// A YAML file of link definitions for the references that the markdown uses without defining, in the form {universal: [{NAME: URL}], PRESET: [{NAME: URL "TITLE"}]}; the universal list always applies, and the list named by --preset with a preset; repeat it for more files. The front matter's refs list, and its platform_refs.PRESET list, apply after the files; a later definition replaces an earlier one, and the markdown's own definition wins
+    /// A YAML file of link definitions for the references that the markdown uses without defining, in the form {universal: [{NAME: URL}], PRESET: [{NAME: URL "TITLE"}]}; the universal list always applies, and the list named by --preset with a preset; repeat it for more files. The front matter's refs list, and its platform_refs.PRESET list, apply after the files, and an embedded file's front matter after those, for the embedded file; a later definition replaces an earlier one, and the markdown's own definition wins
     #[arg(long = "refs", value_name = "FILE")]
     ref_files: Vec<PathBuf>,
 
