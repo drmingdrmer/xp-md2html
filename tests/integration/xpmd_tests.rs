@@ -134,17 +134,12 @@ fn test_render_stdin_to_stdout() -> Result<()> {
 }
 
 /// Without ImageMagick, `render-markup` still writes a PDF and `render-math` an SVG: neither trims
-/// an image. Only macOS finds Chrome outside PATH, so an empty PATH hides ImageMagick alone.
+/// an image. `XPMD_MAGICK` names a file that does not exist, so the run has no ImageMagick.
 #[test]
-#[cfg_attr(
-    not(target_os = "macos"),
-    ignore = "only macOS finds Chrome outside PATH"
-)]
 fn test_render_without_imagemagick() -> Result<()> {
     let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let dir = TestDir::new()?;
-    let empty_path = dir.path().join("bin");
-    fs::create_dir_all(&empty_path)?;
+    let no_magick = dir.path().join("no-magick");
 
     let pdf = dir.path().join("simple.pdf");
     let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
@@ -152,7 +147,7 @@ fn test_render_without_imagemagick() -> Result<()> {
         .arg(root_dir.join("tests/fixtures/simple.html"))
         .arg("-o")
         .arg(&pdf)
-        .env("PATH", &empty_path)
+        .env("XPMD_MAGICK", &no_magick)
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
@@ -168,7 +163,7 @@ fn test_render_without_imagemagick() -> Result<()> {
         .arg(root_dir.join("tests/fixtures/math.tex"))
         .arg("-o")
         .arg(&svg)
-        .env("PATH", &empty_path)
+        .env("XPMD_MAGICK", &no_magick)
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
@@ -181,22 +176,17 @@ fn test_render_without_imagemagick() -> Result<()> {
 
 /// Without ImageMagick, a PNG fails with the help to install ImageMagick, which trims it.
 #[test]
-#[cfg_attr(
-    not(target_os = "macos"),
-    ignore = "only macOS finds Chrome outside PATH"
-)]
 fn test_render_png_without_imagemagick() -> Result<()> {
     let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let dir = TestDir::new()?;
-    let empty_path = dir.path().join("bin");
-    fs::create_dir_all(&empty_path)?;
+    let no_magick = dir.path().join("no-magick");
 
     let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
         .args(["render-markup", "-i"])
         .arg(root_dir.join("tests/fixtures/simple.html"))
         .arg("-o")
         .arg(dir.path().join("simple.png"))
-        .env("PATH", &empty_path)
+        .env("XPMD_MAGICK", &no_magick)
         .output_bounded()?;
 
     let succeeded = result.status.success();
@@ -207,6 +197,32 @@ fn test_render_png_without_imagemagick() -> Result<()> {
     let expected_first_line =
         "Error: Failed to trim the image. Make sure ImageMagick is installed \
                                and accessible; an SVG or a PDF does not need it.";
+    assert_eq!(first_line, Some(expected_first_line));
+    dir.close()
+}
+
+/// `XPMD_CHROME` names the Chrome to run: one that does not exist fails with the help to install
+/// Chrome, also on a machine that has Chrome.
+#[test]
+fn test_render_without_chrome() -> Result<()> {
+    let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let dir = TestDir::new()?;
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["render-markup", "-i"])
+        .arg(root_dir.join("tests/fixtures/simple.html"))
+        .arg("-o")
+        .arg(dir.path().join("simple.png"))
+        .env("XPMD_CHROME", dir.path().join("no-chrome"))
+        .output_bounded()?;
+
+    let succeeded = result.status.success();
+    assert!(!succeeded);
+
+    let stderr = String::from_utf8(result.stderr)?;
+    let first_line = stderr.lines().next();
+    let expected_first_line =
+        "Error: Failed to render content. Make sure Chrome/Chromium is installed and accessible.";
     assert_eq!(first_line, Some(expected_first_line));
     dir.close()
 }

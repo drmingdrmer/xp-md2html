@@ -26,6 +26,14 @@ const CHROME_HELP: &str =
     Chrome: On Linux: sudo apt install chromium-browser (Ubuntu/Debian) or equivalent\n\
     Chrome: On Windows: Install from https://www.google.com/chrome/";
 
+/// The environment variable that names Chrome, as a path or a command in `PATH`, instead of the
+/// lookup.
+const CHROME_ENV: &str = "XPMD_CHROME";
+
+/// The environment variable that names ImageMagick, as a path or a command in `PATH`, instead of
+/// the lookup.
+const MAGICK_ENV: &str = "XPMD_MAGICK";
+
 /// The context of the error when ImageMagick is missing, which only a PNG or a JPEG needs.
 const MAGICK_HELP: &str = "Failed to trim the image. Make sure ImageMagick is installed and accessible; an SVG or a PDF does not need it.\n\
     ImageMagick: On macOS: brew install imagemagick\n\
@@ -323,8 +331,12 @@ impl ChromeRenderer {
         mime.to_string()
     }
 
-    /// Find Chrome executable by checking common paths
+    /// Find Chrome executable: the one that `XPMD_CHROME` names, else by checking common paths
     fn find_chrome_executable() -> anyhow::Result<String> {
+        if let Some(chrome) = configured_tool(CHROME_ENV)? {
+            return Ok(chrome);
+        }
+
         // Check macOS Chrome path first
         let mac_chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
         if Path::new(mac_chrome).exists() {
@@ -377,12 +389,19 @@ impl ChromeRenderer {
         if let Some(magick) = self.magick.get() {
             return Ok(magick);
         }
-        // Find the first available `convert` command:
-        // ImageMagick's `convert` command is deprecated and replaced by `magick convert`
-        let commands = ["magick", "convert"];
-        let found = Self::find_available_command(&commands).context(MAGICK_HELP)?;
+        let found = Self::find_magick().context(MAGICK_HELP)?;
         let magick = self.magick.get_or_init(|| found);
         Ok(magick)
+    }
+
+    /// Find ImageMagick: the command that `XPMD_MAGICK` names, else the first available `convert`
+    /// command: ImageMagick's `convert` command is deprecated and replaced by `magick convert`.
+    fn find_magick() -> anyhow::Result<String> {
+        if let Some(magick) = configured_tool(MAGICK_ENV)? {
+            return Ok(magick);
+        }
+        let commands = ["magick", "convert"];
+        Self::find_available_command(&commands)
     }
 
     /// Create a markup file for chrome to render
@@ -481,6 +500,19 @@ impl ChromeRenderer {
 
         cmd
     }
+}
+
+/// The command that the environment variable `name`, such as `XPMD_CHROME`, names, once `which`
+/// finds it; None when the variable is not set.
+fn configured_tool(name: &str) -> anyhow::Result<Option<String>> {
+    let tool = match std::env::var(name) {
+        Ok(tool) => tool,
+        Err(std::env::VarError::NotPresent) => return Ok(None),
+        Err(error) => return Err(error).with_context(|| format!("Failed to read {name}")),
+    };
+    ChromeRenderer::find_available_command(&[tool.as_str()])
+        .with_context(|| format!("{name} names no command: {tool}"))?;
+    Ok(Some(tool))
 }
 
 /// A [`ChromeRenderer`] that looks for Chrome on its first use, and for ImageMagick on its first
