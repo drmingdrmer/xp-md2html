@@ -15,7 +15,7 @@ tests/
 ## How It Works
 
 1. **With `UPDATE_GOLDEN=1`**: Saves each render as its golden reference image
-2. **Normal Runs**: Compares new render against golden image using RMS similarity (1 - root mean square error of grayscale pixels)
+2. **Normal Runs**: Compares new render against golden image using RMS similarity (1 - root mean square error of the red, green or blue channel, whichever is lowest), with both images laid over a white and then a black background, so a change of color or of alpha alone fails
 3. **Pass/Fail**: Test passes if both images have the same size and the similarity is at least the threshold. A missing golden image fails the test
 
 ## Running Tests

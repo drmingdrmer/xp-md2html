@@ -4,7 +4,10 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use anyhow::Result;
-use image::GenericImageView;
+use image::DynamicImage;
+use image::RgbImage;
+use image::Rgba;
+use image::RgbaImage;
 use image_compare::Algorithm;
 use xp_md2html::render::chrome::ChromeRenderer;
 use xp_md2html::render::chrome::RenderConfig;
@@ -14,6 +17,13 @@ const SIMILARITY_THRESHOLD: f64 = 0.99;
 
 /// Set this environment variable to `1` to save each render as its golden image instead of comparing.
 const UPDATE_GOLDEN_ENV: &str = "UPDATE_GOLDEN";
+
+/// The backgrounds that both images are laid over for the comparison: a change of alpha alone
+/// shows over at least one of them.
+const BACKGROUNDS: [(&str, Rgba<u8>); 2] = [
+    ("white", Rgba([255, 255, 255, 255])),
+    ("black", Rgba([0, 0, 0, 255])),
+];
 
 /// Golden master test configuration
 struct GoldenTest {
@@ -61,13 +71,11 @@ fn get_test_paths() -> TestPaths {
     }
 }
 
-/// Compare two images using RMS similarity (1 - root mean square error of grayscale pixels)
-fn compare_images(expected_path: &Path, actual_data: &[u8], threshold: f64) -> Result<()> {
-    let expected_image = image::open(expected_path)?;
-    let actual_image = image::load_from_memory(actual_data)?;
-
-    let expected_dims = expected_image.dimensions();
-    let actual_dims = actual_image.dimensions();
+/// Compare two images using RMS similarity (1 - root mean square error of the red, the green or
+/// the blue channel, whichever is lowest), with both images laid over each of [`BACKGROUNDS`].
+fn compare_images(expected: &RgbaImage, actual: &RgbaImage, threshold: f64) -> Result<()> {
+    let expected_dims = expected.dimensions();
+    let actual_dims = actual.dimensions();
 
     if expected_dims != actual_dims {
         anyhow::bail!(
@@ -77,28 +85,36 @@ fn compare_images(expected_path: &Path, actual_data: &[u8], threshold: f64) -> R
         );
     }
 
-    // Convert to grayscale for comparison
-    let expected_gray = expected_image.to_luma8();
-    let actual_gray = actual_image.to_luma8();
+    for (name, background) in BACKGROUNDS {
+        let expected_rgb = lay_over(expected, background);
+        let actual_rgb = lay_over(actual, background);
 
-    // Calculate RMS similarity
-    let result = image_compare::gray_similarity_structure(
-        &Algorithm::RootMeanSquared,
-        &expected_gray,
-        &actual_gray,
-    )?;
+        // Calculate RMS similarity
+        let result = image_compare::rgb_similarity_structure(
+            &Algorithm::RootMeanSquared,
+            &expected_rgb,
+            &actual_rgb,
+        )?;
 
-    println!("Image similarity score: {:.4}", result.score);
+        println!("Image similarity score over {name}: {:.4}", result.score);
 
-    if result.score < threshold {
-        anyhow::bail!(
-            "Image similarity {:.4} below threshold {:.4}",
-            result.score,
-            threshold
-        );
+        if result.score < threshold {
+            anyhow::bail!(
+                "Image similarity {:.4} over {name} below threshold {:.4}",
+                result.score,
+                threshold
+            );
+        }
     }
 
     Ok(())
+}
+
+/// `image` laid over an image of `background` alone, by the alpha of each pixel.
+fn lay_over(image: &RgbaImage, background: Rgba<u8>) -> RgbImage {
+    let mut laid = RgbaImage::from_pixel(image.width(), image.height(), background);
+    image::imageops::overlay(&mut laid, image, 0, 0);
+    DynamicImage::ImageRgba8(laid).to_rgb8()
 }
 
 /// Run a golden master test
@@ -161,7 +177,9 @@ fn do_run_golden_test(test: &GoldenTest) -> Result<()> {
     }
 
     // Compare with golden image
-    compare_images(&golden_path, &actual_data, test.similarity_threshold)?;
+    let expected_image = image::open(&golden_path)?.to_rgba8();
+    let actual_image = image::load_from_memory(&actual_data)?.to_rgba8();
+    compare_images(&expected_image, &actual_image, test.similarity_threshold)?;
 
     println!("✅ Golden test '{}' passed", test.name());
     Ok(())
@@ -210,9 +228,10 @@ fn test_svg_rendering() {
     run_golden_test(&test).unwrap();
 }
 
-// Test that demonstrates failure handling (should fail on purpose)
+/// A render of `simple_test.html`, a changed copy of `simple.html`, fails the comparison with the
+/// golden image of `simple.html`.
 #[test]
-#[ignore] // Run with: cargo test test_failure_demo -- --ignored
+#[cfg_attr(not(target_os = "macos"), ignore = "golden images are made on macOS")]
 fn test_failure_demo() {
     let test = GoldenTest {
         input_file: "simple_test.html", // Different input file
@@ -241,5 +260,51 @@ fn test_failure_demo() {
     // This should fail because we're using a different input file
     // but comparing against the existing simple.png golden image
     let golden_path = paths.golden_dir.join("simple.png");
-    compare_images(&golden_path, &actual_data, test.similarity_threshold).unwrap();
+    let expected_image = image::open(&golden_path).unwrap().to_rgba8();
+    let actual_image = image::load_from_memory(&actual_data).unwrap().to_rgba8();
+    let compared = compare_images(&expected_image, &actual_image, test.similarity_threshold);
+    let message = compared.unwrap_err().to_string();
+    assert_eq!(
+        message,
+        "Image dimensions differ: expected (184, 58), got (316, 65)"
+    );
+}
+
+/// A change of color that keeps the gray level, a change of alpha alone, and a change of size each
+/// fail the comparison, and an equal image passes; no Chrome renders these images.
+#[test]
+fn test_compare_images() {
+    // `to_luma8` turns both colors into the same gray, 54.
+    let red = RgbaImage::from_pixel(4, 3, Rgba([255, 0, 0, 255]));
+    let green = RgbaImage::from_pixel(4, 3, Rgba([0, 76, 0, 255]));
+    let white = RgbaImage::from_pixel(4, 3, Rgba([255, 255, 255, 255]));
+    let clear_white = RgbaImage::from_pixel(4, 3, Rgba([255, 255, 255, 0]));
+    let tall_red = RgbaImage::from_pixel(4, 4, Rgba([255, 0, 0, 255]));
+
+    let same = compare_images(&red, &red, SIMILARITY_THRESHOLD);
+    assert!(same.is_ok(), "{same:?}");
+
+    // The expected image, the actual image, and the error of the comparison.
+    let cases = [
+        (
+            &red,
+            &green,
+            "Image similarity 0.0000 over white below threshold 0.9900",
+        ),
+        (
+            &white,
+            &clear_white,
+            "Image similarity 0.0000 over black below threshold 0.9900",
+        ),
+        (
+            &red,
+            &tall_red,
+            "Image dimensions differ: expected (4, 3), got (4, 4)",
+        ),
+    ];
+    for (expected, actual, expected_error) in cases {
+        let compared = compare_images(expected, actual, SIMILARITY_THRESHOLD);
+        let error = compared.unwrap_err().to_string();
+        assert_eq!(error, expected_error);
+    }
 }
