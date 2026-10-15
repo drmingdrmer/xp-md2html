@@ -805,6 +805,36 @@ fn test_process_escaped_dollar() -> Result<()> {
     dir.close()
 }
 
+/// `xpmd process` writes the `[` of text bare, which a site with the formula delimiter `\[` would
+/// read as a formula, and keeps each `]` escaped, so the text that `codespan-to-text` makes from a
+/// code span makes no link; a `[` in the text of a link stays escaped.
+#[test]
+fn test_process_bracket() -> Result<()> {
+    let dir = TestDir::new()?;
+    let input = dir.path().join("post.md");
+    fs::write(
+        &input,
+        "[Local-Reconstruction-Code], 简称 LRC: `[a](b)` and [c \\[d](https://e.com).\n",
+    )?;
+    let output = dir.path().join("out/post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "codespan-to-text", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .output_ok()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let expected_markdown =
+        "[Local-Reconstruction-Code\\], 简称 LRC: [a\\](b) and [c \\[d](https://e.com).\n";
+    assert_eq!(markdown, expected_markdown);
+    dir.close()
+}
+
 /// `xpmd process --action flatten-lists` writes each list item and quote as a plain paragraph.
 #[test]
 fn test_process_flatten_lists() -> Result<()> {

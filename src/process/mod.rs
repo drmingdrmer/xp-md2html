@@ -437,6 +437,7 @@ pub fn process_markdown(
         action.apply(&arena, root, &loader, ctx)?;
     }
     escape_dollars(&arena, root);
+    unescape_brackets(&arena, root);
 
     let mut out = String::new();
     comrak::format_commonmark(root, &options, &mut out)?;
@@ -448,23 +449,52 @@ pub fn process_markdown(
 fn escape_dollars<'a>(arena: &'a Arena<'a>, root: Node<'a>) {
     let nodes: Vec<Node<'a>> = root.descendants().collect();
     for node in nodes {
-        let text = match &node.data().value {
-            NodeValue::Text(text) if text.contains('$') => text.to_string(),
-            _ => continue,
-        };
         // A raw node prints as it is, while a text node would escape the backslash.
-        for (index, part) in text.split('$').enumerate() {
-            if index > 0 {
-                let dollar = arena.alloc(NodeValue::Raw("\\$".to_string()).into());
-                node.insert_before(dollar);
-            }
-            if !part.is_empty() {
-                let part = arena.alloc(NodeValue::Text(part.to_string().into()).into());
-                node.insert_before(part);
-            }
-        }
-        node.detach();
+        write_raw(arena, node, '$', "\\$");
     }
+}
+
+/// Write each `[` in a text node under `root` bare, outside the text of a link or an image. comrak
+/// writes `\[`, and a site whose display formulas are delimited by `\[` and `\]`, such as Hugo with
+/// the passthrough extension, reads the text `\[x\]` as a formula. Each `]` stays escaped, so a bare
+/// `[` makes no link, reference, footnote or task list item. In the text of a link, a bare `[` would
+/// take the link's `]` and start the link there, so it stays escaped.
+fn unescape_brackets<'a>(arena: &'a Arena<'a>, root: Node<'a>) {
+    let nodes: Vec<Node<'a>> = root.descendants().collect();
+    for node in nodes {
+        if in_link(node) {
+            continue;
+        }
+        write_raw(arena, node, '[', "[");
+    }
+}
+
+/// Whether `node` is in the text of a link or an image.
+fn in_link(node: Node<'_>) -> bool {
+    node.ancestors().any(|ancestor| {
+        let value = &ancestor.data().value;
+        matches!(value, NodeValue::Link(_) | NodeValue::Image(_))
+    })
+}
+
+/// Replace `node`, when it is a text node that holds `c`, with its text, in which a raw node of
+/// `raw`, which prints as it is, stands for each `c`.
+fn write_raw<'a>(arena: &'a Arena<'a>, node: Node<'a>, c: char, raw: &str) {
+    let text = match &node.data().value {
+        NodeValue::Text(text) if text.contains(c) => text.to_string(),
+        _ => return,
+    };
+    for (index, part) in text.split(c).enumerate() {
+        if index > 0 {
+            let raw_node = arena.alloc(NodeValue::Raw(raw.to_string()).into());
+            node.insert_before(raw_node);
+        }
+        if !part.is_empty() {
+            let part = arena.alloc(NodeValue::Text(part.to_string().into()).into());
+            node.insert_before(part);
+        }
+    }
+    node.detach();
 }
 
 /// The path of `target` relative to the directory `base`, with `/` between the parts, for a link in a file under `base`;
@@ -725,6 +755,36 @@ mod tests {
         let mut out = String::new();
         comrak::format_commonmark(root, &options, &mut out)?;
         assert_eq!(out, markdown);
+        Ok(())
+    }
+
+    /// A bare `[` changes no node: each `]` stays escaped, also after text that looks like a link, a
+    /// reference definition, a footnote or a task list item; a `[` in a link or an image stays
+    /// escaped.
+    #[test]
+    fn test_unescape_brackets() -> anyhow::Result<()> {
+        let markdown = "[A], b. \\[c\\](d) \\[^e\\] [^e] [f \\[g](h) ![i \\[j](k.png)\n\n\
+                        \\[l\\]: m\n\n- \\[x\\] n\n\n[^e]: o\n";
+        let arena = Arena::new();
+        let options = gfm_math_options();
+        let root = comrak::parse_document(&arena, markdown, &options);
+
+        unescape_brackets(&arena, root);
+
+        let mut out = String::new();
+        comrak::format_commonmark(root, &options, &mut out)?;
+        let expected = "[A\\], b. [c\\](d) [^e\\] [^e] [f \\[g](h) ![i \\[j](k.png)\n\n\
+                        [l\\]: m\n\n- [x\\] n\n\n[^e]:\n    o\n";
+        assert_eq!(out, expected);
+
+        // comrak reads the output as the tree of the input.
+        let mut reparsed = String::new();
+        let reparsed_root = comrak::parse_document(&arena, &out, &options);
+        comrak::format_commonmark(reparsed_root, &options, &mut reparsed)?;
+        let mut parsed = String::new();
+        let parsed_root = comrak::parse_document(&arena, markdown, &options);
+        comrak::format_commonmark(parsed_root, &options, &mut parsed)?;
+        assert_eq!(reparsed, parsed);
         Ok(())
     }
 
