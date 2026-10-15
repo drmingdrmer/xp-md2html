@@ -10,6 +10,7 @@ pub mod flatten_lists;
 pub mod graphviz_to_image;
 pub mod image_to_asset;
 pub mod join_math_block;
+pub mod link_to_asset;
 pub mod math_block_to_one_line;
 pub mod math_inline_to_text;
 pub mod math_to_image;
@@ -163,6 +164,9 @@ pub enum Action {
     EmbedMarkdown,
     /// Copy every local image into the assets dir and link the copy.
     ImageToAsset,
+    /// Copy every local file that a link names, other than markdown, into the assets dir under its
+    /// own name, and link the copy.
+    LinkToAsset,
     /// Replace every table with a bare `<table>`.
     TableToHtml,
     /// Replace every ```` ```mermaid ```` block with a PNG of the diagram.
@@ -232,6 +236,7 @@ impl FromStr for Action {
             ("download-images", None) => Ok(Self::DownloadImages),
             ("embed-markdown", None) => Ok(Self::EmbedMarkdown),
             ("image-to-asset", None) => Ok(Self::ImageToAsset),
+            ("link-to-asset", None) => Ok(Self::LinkToAsset),
             ("table-to-html", None) => Ok(Self::TableToHtml),
             ("mermaid-to-image", None) => Ok(Self::MermaidToImage),
             ("graphviz-to-image", None) => Ok(Self::GraphvizToImage),
@@ -303,6 +308,7 @@ impl Action {
             Self::DownloadImages => download_images::apply(root, ctx),
             Self::EmbedMarkdown => embed_markdown::apply(loader, root, ctx),
             Self::ImageToAsset => image_to_asset::apply(root, ctx),
+            Self::LinkToAsset => link_to_asset::apply(root, ctx),
             Self::TableToHtml => table_to_html::apply(arena, root),
             Self::MermaidToImage => mermaid_to_image::apply(arena, root, ctx),
             Self::GraphvizToImage => graphviz_to_image::apply(arena, root, ctx),

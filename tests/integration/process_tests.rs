@@ -1084,6 +1084,74 @@ fn test_process_image_to_asset_url_escapes() -> Result<()> {
     dir.close()
 }
 
+/// `xpmd process --action link-to-asset` copies each local file that a link names, also by a
+/// reference, into `--assets` under the file's own name, and links the copy with the URL's
+/// fragment. A link to a web URL, an anchor, a page path, a directory, a missing file or a markdown
+/// file stays as written.
+#[test]
+fn test_process_link_to_asset() -> Result<()> {
+    let dir = TestDir::new()?;
+    let input_dir = dir.path().join("posts");
+    fs::create_dir_all(input_dir.join("data/dir"))?;
+    fs::write(input_dir.join("data/find-zipf.py"), "print(1)\n")?;
+    fs::write(input_dir.join("count.txt"), "1 2\n")?;
+    fs::write(input_dir.join("my doc.pdf"), "PDF")?;
+    fs::write(input_dir.join("other.md"), "# Other\n")?;
+    let input = input_dir.join("post.md");
+    fs::write(
+        &input,
+        "[py](data/find-zipf.py), [count.txt][], [pdf](my%20doc.pdf#page=2), \
+         [web](https://x.io/a.txt), [anchor](#a), [page](/about/), [dir](data/dir), \
+         [missing](missing.txt), [article](other.md)\n\n[count.txt]: count.txt\n",
+    )?;
+    let output_dir = dir.path().join("out");
+    let output = output_dir.join("post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "link-to-asset", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .args(["--url-base", "/post-res/post"])
+        .output_ok()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let base = "/post-res/post";
+    let expected_markdown = format!(
+        "[py]({base}/find-zipf.py), [count.txt]({base}/count.txt), \
+         [pdf]({base}/my%20doc.pdf#page=2), [web](https://x.io/a.txt), [anchor](#a), \
+         [page](/about/), [dir](data/dir), [missing](missing.txt), [article](other.md)\n"
+    );
+    assert_eq!(markdown, expected_markdown);
+
+    let mut files = Vec::new();
+    for entry in fs::read_dir(&output_dir)? {
+        files.push(entry?.file_name());
+    }
+    files.sort();
+    assert_eq!(files, [
+        "count.txt",
+        "find-zipf.py",
+        "my doc.pdf",
+        "post.md"
+    ]);
+
+    let copies = [
+        ("find-zipf.py", "data/find-zipf.py"),
+        ("count.txt", "count.txt"),
+        ("my doc.pdf", "my doc.pdf"),
+    ];
+    for (copy, source) in copies {
+        let copied = fs::read(output_dir.join(copy))?;
+        let original = fs::read(input_dir.join(source))?;
+        assert_eq!(copied, original);
+    }
+    dir.close()
+}
+
 /// `xpmd process --url-base URL` links the copy as URL plus its path relative to the output file;
 /// a trailing `/` on URL is not doubled.
 #[test]

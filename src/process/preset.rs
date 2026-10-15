@@ -63,9 +63,10 @@ impl Preset {
     /// The actions that give md2zhihu's result for this platform, in order.
     ///
     /// md2zhihu joins the `$$` formulas that blank lines split, embeds the `.md` images, drops the
-    /// front matter, copies the local images and lists the references on every platform. These steps
-    /// run before the conversions:
+    /// front matter, copies the local images and linked files, and lists the references on every
+    /// platform. These steps run before the conversions:
     /// - `image-to-asset` would take an image that a conversion creates for a local image of the input.
+    /// - `link-to-asset` would miss a link in a table that `table-to-html` turns into HTML.
     /// - No conversion changes the reference list, except weibo's `flatten-lists`, which flattens it
     ///   as md2zhihu writes it for Weibo: without a `<p>` in a `<li>`.
     pub fn actions(self) -> Vec<Action> {
@@ -74,6 +75,7 @@ impl Preset {
             Action::EmbedMarkdown,
             Action::DropFrontMatter,
             Action::ImageToAsset,
+            Action::LinkToAsset,
             Action::AppendReferenceList,
         ];
         actions.extend(self.conversions());
@@ -172,6 +174,7 @@ mod tests {
             Action::EmbedMarkdown,
             Action::DropFrontMatter,
             Action::ImageToAsset,
+            Action::LinkToAsset,
             Action::AppendReferenceList,
             Action::MathToImgTag {
                 service: MathService::Zhihu,
@@ -188,6 +191,7 @@ mod tests {
             Action::EmbedMarkdown,
             Action::DropFrontMatter,
             Action::ImageToAsset,
+            Action::LinkToAsset,
             Action::AppendReferenceList,
         ];
         assert_eq!(transparent, expected_transparent);
