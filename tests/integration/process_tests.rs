@@ -696,6 +696,45 @@ fn test_process_embed_join_math_block() -> Result<()> {
     dir.close()
 }
 
+/// `xpmd process --preset zhihu` draws a `$$` formula whose lines would start blocks as one formula,
+/// such as a `=` that would underline a setext heading, also in a list item and in a quote; a code
+/// block that holds such a formula stays.
+#[test]
+fn test_process_zhihu_formula_lines() -> Result<()> {
+    let dir = TestDir::new()?;
+    let input = dir.path().join("post.md");
+    fs::write(
+        &input,
+        "$$\na\n=\nb\n$$\n\n\
+         - Item:\n\n  $$\n  c\n\n  - d\n  $$\n\n\
+         > $$\n> e\n> =\n> f\n> $$\n\n\
+         ```tex\n$$\ng\n=\nh\n$$\n```\n",
+    )?;
+    let output = dir.path().join("out/post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--preset", "zhihu", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .output_ok()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let expected_markdown = concat!(
+        r#"<img src="https://www.zhihu.com/equation?tex=a%20%3D%20b%5C%5C" alt="a = b\\" class="ee_img tr_noresize" eeimg="1">"#,
+        "\n\n- Item:\n  \n  ",
+        r#"<img src="https://www.zhihu.com/equation?tex=c%20-%20d%5C%5C" alt="c - d\\" class="ee_img tr_noresize" eeimg="1">"#,
+        "\n\n> ",
+        r#"<img src="https://www.zhihu.com/equation?tex=e%20%3D%20f%5C%5C" alt="e = f\\" class="ee_img tr_noresize" eeimg="1">"#,
+        "\n\n```tex\n$$\ng\n=\nh\n$$\n```\n",
+    );
+    assert_eq!(markdown, expected_markdown);
+    dir.close()
+}
+
 /// `xpmd process --action math-inline-to-text` replaces an inline formula with Unicode text.
 #[test]
 fn test_process_math_inline_to_text() -> Result<()> {

@@ -210,8 +210,10 @@ pub enum Action {
         /// The `/REGEX/REPL/` rule.
         rule: UrlRewrite,
     },
-    /// Join the paragraphs of a `$$` formula that blank lines split. It edits the text of the input
-    /// file and of each embedded file before the parse, so it takes effect wherever it is listed.
+    /// Join the paragraphs of a `$$` formula that blank lines split, and keep each line up to the next
+    /// `$$` after a `$$` alone on a line in the formula, also a line such as `=` that comrak would
+    /// read as markdown. It edits the text of the input file and of each embedded file before the
+    /// parse, so it takes effect wherever it is listed.
     JoinMathBlock,
 }
 
