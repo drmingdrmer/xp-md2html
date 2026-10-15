@@ -75,3 +75,33 @@ fn test_render_markdown_reads_stdin() -> Result<()> {
     assert_eq!(stdout, "<p>a <br> b</p>\n");
     Ok(())
 }
+
+/// `xp-md2html` keeps raw HTML, such as the tables and formula images in md2zhihu's wechat
+/// output, and still escapes a `<` in text.
+#[test]
+fn test_xp_md2html_keeps_raw_html() -> Result<()> {
+    let markdown = "<table>\n\
+                    <tr>\n\
+                    <td>a</td>\n\
+                    </tr>\n\
+                    </table>\n\
+                    \n\
+                    Math <img src=\"https://www.zhihu.com/equation?tex=x%5E2\" alt=\"x^2\" class=\"ee_img tr_noresize\" eeimg=\"1\"> and `a < b`.\n";
+    let result =
+        Command::new(env!("CARGO_BIN_EXE_xp-md2html")).output_ok_with_stdin(markdown.as_bytes())?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let stdout = String::from_utf8(result.stdout)?;
+    assert_eq!(
+        stdout,
+        "<table>\n\
+         <tr>\n\
+         <td>a</td>\n\
+         </tr>\n\
+         </table>\n\
+         <p>Math <img src=\"https://www.zhihu.com/equation?tex=x%5E2\" alt=\"x^2\" class=\"ee_img tr_noresize\" eeimg=\"1\"> and <code>a &lt; b</code>.</p>\n\n"
+    );
+    Ok(())
+}
