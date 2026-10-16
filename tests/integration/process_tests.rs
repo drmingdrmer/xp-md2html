@@ -735,6 +735,46 @@ fn test_process_zhihu_formula_lines() -> Result<()> {
     dir.close()
 }
 
+/// `xpmd process` prints a line of a `$$` formula that would start a block, such as `=`, after an
+/// indent of 4 spaces, also in a list item and in a quote, as md2zhihu does. A reader without the
+/// `$$` rule of `join-math-block`, such as github.com, then reads each formula as one: `xpmd
+/// process` without `join-math-block` reads the output back unchanged.
+#[test]
+fn test_process_formula_line_indent() -> Result<()> {
+    let dir = TestDir::new()?;
+    let input = dir.path().join("post.md");
+    fs::write(
+        &input,
+        "$$\na\n=\nb\n$$\n\n- Item:\n\n  $$\n  c\n  =\n  d\n  $$\n\n> $$\n> e\n> - f\n> $$\n",
+    )?;
+    let output = dir.path().join("out/post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--preset", "transparent", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .output_ok()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let expected_markdown = "$$\na\n    =\nb\n$$\n\n\
+                             - Item:\n  \n  $$\n  c\n      =\n  d\n  $$\n\n\
+                             > $$\n> e\n>     - f\n> $$\n";
+    assert_eq!(markdown, expected_markdown);
+
+    let reread = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "-i"])
+        .arg(&output)
+        .output_ok()?;
+
+    let reread_markdown = String::from_utf8(reread.stdout)?;
+    assert_eq!(reread_markdown, expected_markdown);
+    dir.close()
+}
+
 /// `xpmd process --action math-inline-to-text` replaces an inline formula with Unicode text.
 #[test]
 fn test_process_math_inline_to_text() -> Result<()> {

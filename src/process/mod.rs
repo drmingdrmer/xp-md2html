@@ -441,6 +441,10 @@ pub fn process_markdown(
 
     let mut out = String::new();
     comrak::format_commonmark(root, &options, &mut out)?;
+    // comrak prints the TeX of a formula as it is, so a line of it such as `=` would split the
+    // formula wherever a reader lacks md2zhihu's `$$` rule, such as on github.com; `join` indents
+    // such a line, as md2zhihu prints it.
+    let out = join_math_block::join(&out);
     Ok(out)
 }
 
