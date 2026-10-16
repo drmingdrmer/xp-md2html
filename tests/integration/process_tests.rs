@@ -1154,6 +1154,47 @@ fn test_process_image_to_asset_url_escapes() -> Result<()> {
     dir.close()
 }
 
+/// `xpmd process --preset minimal_mistake --md2zhihu-image-names` names the copy of a local image
+/// as md2zhihu does: the first 16 hex digits of the image's MD5, then its file name with the space
+/// replaced by `-`.
+#[test]
+fn test_process_md2zhihu_image_names() -> Result<()> {
+    let dir = TestDir::new()?;
+    let input_dir = dir.path().join("posts");
+    fs::create_dir_all(&input_dir)?;
+    fs::write(input_dir.join("my pic.png"), b"PNG-A")?;
+    let input = input_dir.join("post.md");
+    fs::write(&input, "![a](my%20pic.png)\n")?;
+    let output_dir = dir.path().join("out");
+    let output = output_dir.join("post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--preset", "minimal_mistake"])
+        .arg("--md2zhihu-image-names")
+        .arg("-i")
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .output_ok()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    assert_eq!(markdown, "![a](4c699dfa744f4737-my-pic.png)\n");
+
+    let mut files = Vec::new();
+    for entry in fs::read_dir(&output_dir)? {
+        files.push(entry?.file_name());
+    }
+    files.sort();
+    assert_eq!(files, ["4c699dfa744f4737-my-pic.png", "post.md"]);
+
+    let copied = fs::read(output_dir.join("4c699dfa744f4737-my-pic.png"))?;
+    assert_eq!(copied, b"PNG-A");
+    dir.close()
+}
+
 /// `xpmd process --action link-to-asset` copies each local file that a link names, also by a
 /// reference, into `--assets` under the file's own name, and links the copy with the URL's
 /// fragment. A link to a web URL, an anchor, a page path, a directory, a missing file or a markdown

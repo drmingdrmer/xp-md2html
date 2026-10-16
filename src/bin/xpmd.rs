@@ -120,6 +120,10 @@ struct ProcessArgs {
     #[arg(long, value_name = "URL")]
     url_base: Option<String>,
 
+    /// Name each image that image-to-asset copies as md2zhihu does, so that a site that moves from md2zhihu keeps its image URLs: the first 16 hex digits of the MD5 of the image, then - and its file name with each whitespace, %, #, ? and / replaced by - [default: the first 12 hex digits of the SHA-256 of the image, then - and its file name]
+    #[arg(long)]
+    md2zhihu_image_names: bool,
+
     /// Window width for rendering images
     #[arg(short, long, default_value = "1000")]
     width: u32,
@@ -570,6 +574,7 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         output,
         assets,
         url_base,
+        md2zhihu_image_names,
         width,
         height,
         scale,
@@ -634,6 +639,7 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         output_dir,
         url_base,
         stem,
+        md2zhihu_image_names,
         refs,
         embed_patterns,
         renderer,

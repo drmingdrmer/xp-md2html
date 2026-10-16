@@ -8,6 +8,8 @@ use std::path::PathBuf;
 use anyhow::Context;
 use comrak::nodes::NodeValue;
 use comrak::Node;
+use md5::Digest;
+use md5::Md5;
 
 use super::embed_markdown;
 use super::ActionContext;
@@ -20,7 +22,12 @@ pub fn apply(root: Node<'_>, ctx: &ActionContext) -> anyhow::Result<()> {
         if ctx.is_asset(url) {
             return Ok(url.to_string());
         }
-        let path = copy(url, &ctx.input_dir, &ctx.assets_dir)?;
+        let path = copy(
+            url,
+            &ctx.input_dir,
+            &ctx.assets_dir,
+            ctx.md2zhihu_image_names,
+        )?;
         let link = ctx.link_to(&path)?;
         let (_, suffix) = super::split_suffix(url);
         Ok(format!("{link}{suffix}"))
@@ -52,13 +59,23 @@ fn is_local(url: &str) -> bool {
 }
 
 /// Copy the image at `url`, which resolves against `input_dir`, into `assets_dir` under a name
-/// that hashes its content, and return the copy's path.
-fn copy(url: &str, input_dir: &Path, assets_dir: &Path) -> anyhow::Result<PathBuf> {
+/// that hashes its content, md2zhihu's name with `md2zhihu_names`, and return the copy's path.
+fn copy(
+    url: &str,
+    input_dir: &Path,
+    assets_dir: &Path,
+    md2zhihu_names: bool,
+) -> anyhow::Result<PathBuf> {
     let source = embed_markdown::resolve(input_dir, input_dir, url);
     let content =
         fs::read(&source).with_context(|| format!("Failed to read image: {}", source.display()))?;
     let basename = source.file_name().and_then(OsStr::to_str).unwrap_or("");
-    let path = assets_dir.join(file_name(basename, &content));
+    let name = if md2zhihu_names {
+        md2zhihu_file_name(basename, &content)
+    } else {
+        file_name(basename, &content)
+    };
+    let path = assets_dir.join(name);
     fs::write(&path, &content)
         .with_context(|| format!("Failed to write image: {}", path.display()))?;
     Ok(path)
@@ -68,6 +85,27 @@ fn copy(url: &str, input_dir: &Path, assets_dir: &Path) -> anyhow::Result<PathBu
 fn file_name(basename: &str, content: &[u8]) -> String {
     let hash = super::short_hash(content);
     format!("{hash}-{basename}")
+}
+
+/// How many hex digits of an MD5 hash md2zhihu keeps in the name of a copied image.
+const MD2ZHIHU_HASH_LEN: usize = 16;
+
+/// `<md5(content)[..16]>-<basename>`, md2zhihu's name of a copied image, where each character of
+/// `basename` that [`is_unsafe_name_char`] accepts becomes `-`.
+fn md2zhihu_file_name(basename: &str, content: &[u8]) -> String {
+    let digest = Md5::digest(content);
+    let hex = format!("{digest:x}");
+    let hash = &hex[..MD2ZHIHU_HASH_LEN];
+    let basename = basename.replace(is_unsafe_name_char, "-");
+    format!("{hash}-{basename}")
+}
+
+/// Whether md2zhihu replaces `c` in the name of a copied image: a character of Python's `\s`, which
+/// is Rust's whitespace plus the separators U+001C to U+001F, or one of `%`, `#`, `?` and `/`, which
+/// a URL reads as syntax.
+fn is_unsafe_name_char(c: char) -> bool {
+    let is_separator = ('\u{1c}'..='\u{1f}').contains(&c);
+    c.is_whitespace() || is_separator || "%#?/".contains(c)
 }
 
 #[cfg(test)]
@@ -109,25 +147,30 @@ mod tests {
         fs::write(input_dir.join("img/a.png"), b"PNG-A")?;
         fs::write(input_dir.join("r.png"), b"PNG-R")?;
 
-        let path = copy("img/a.png", &input_dir, &assets_dir)?;
+        let path = copy("img/a.png", &input_dir, &assets_dir, false)?;
         assert_eq!(path, assets_dir.join("e793c41f42c3-a.png"));
         let copied = fs::read(&path)?;
         assert_eq!(copied, b"PNG-A");
 
         // `/r.png` resolves against the input directory, not the file system root.
-        let path = copy("/r.png", &input_dir, &assets_dir)?;
+        let path = copy("/r.png", &input_dir, &assets_dir, false)?;
         assert_eq!(path, assets_dir.join("0ced803886f0-r.png"));
         let copied = fs::read(&path)?;
         assert_eq!(copied, b"PNG-R");
 
         // The URL's path is decoded, and its query and fragment name no file.
         fs::write(input_dir.join("my pic.png"), b"PNG-A")?;
-        let path = copy("my%20pic.png?v=2#x", &input_dir, &assets_dir)?;
+        let path = copy("my%20pic.png?v=2#x", &input_dir, &assets_dir, false)?;
         assert_eq!(path, assets_dir.join("e793c41f42c3-my pic.png"));
         let copied = fs::read(&path)?;
         assert_eq!(copied, b"PNG-A");
 
-        let error = copy("img/missing.png", &input_dir, &assets_dir).unwrap_err();
+        let path = copy("my%20pic.png?v=2#x", &input_dir, &assets_dir, true)?;
+        assert_eq!(path, assets_dir.join("4c699dfa744f4737-my-pic.png"));
+        let copied = fs::read(&path)?;
+        assert_eq!(copied, b"PNG-A");
+
+        let error = copy("img/missing.png", &input_dir, &assets_dir, false).unwrap_err();
         let expected = format!(
             "Failed to read image: {}",
             input_dir.join("img/missing.png").display()
@@ -143,5 +186,20 @@ mod tests {
 
         let name = file_name("r.png", b"PNG-R");
         assert_eq!(name, "0ced803886f0-r.png");
+    }
+
+    /// md2zhihu's name replaces each whitespace, also a non-ASCII one and a separator such as
+    /// U+001F, and each `%`, `#`, `?` and `/`; md2zhihu 0.19 gives the same names.
+    #[test]
+    fn test_md2zhihu_file_name() {
+        // The hash is `printf PNG-A | md5sum | cut -c1-16`.
+        let name = md2zhihu_file_name("a.png", b"PNG-A");
+        assert_eq!(name, "4c699dfa744f4737-a.png");
+
+        let name = md2zhihu_file_name("my pic\t100%#1?/2.png", b"PNG-A");
+        assert_eq!(name, "4c699dfa744f4737-my-pic-100--1--2.png");
+
+        let name = md2zhihu_file_name("图\u{3000}a\u{1f}b.png", b"PNG-A");
+        assert_eq!(name, "4c699dfa744f4737-图-a-b.png");
     }
 }

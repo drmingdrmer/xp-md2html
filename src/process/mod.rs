@@ -59,6 +59,9 @@ pub struct ActionContext {
     /// The markdown's name, such as the output file's stem; it prefixes the names of the files the
     /// actions create.
     pub stem: String,
+    /// Whether `image-to-asset` names each copy as md2zhihu does, so that a site that moves from
+    /// md2zhihu keeps the URL of each image.
+    pub md2zhihu_image_names: bool,
     /// The link reference definitions for the references that the markdown does not define.
     pub refs: Refs,
     /// The regexes of the image URLs that `embed-markdown` embeds; an image is embedded when one of
@@ -811,6 +814,7 @@ mod tests {
             output_dir: dir.path().to_path_buf(),
             url_base: None,
             stem: "post".to_string(),
+            md2zhihu_image_names: false,
             refs: Refs::default(),
             embed_patterns: Vec::new(),
             renderer: LazyRenderer::new(config),
