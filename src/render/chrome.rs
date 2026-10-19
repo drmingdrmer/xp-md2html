@@ -567,6 +567,7 @@ fn env_var(name: &str) -> anyhow::Result<Option<String>> {
 /// `timeout`. Its stdout and stderr go into temporary files, which hold all its output once it
 /// exits. A pipe would end only when the last process that holds it exits, and GoogleUpdater,
 /// which Chrome may start, holds Chrome's stdout and stderr long after Chrome exits.
+/// The error of a killed run holds what the tool printed to stderr.
 fn output_within(cmd: &mut Command, timeout: Duration) -> anyhow::Result<Output> {
     let stdout = NamedTempFile::new()?;
     let stderr = NamedTempFile::new()?;
@@ -585,7 +586,15 @@ fn output_within(cmd: &mut Command, timeout: Duration) -> anyhow::Result<Output>
         if start.elapsed() > timeout {
             child.kill()?;
             child.wait()?;
-            anyhow::bail!("Killed it after {timeout:?}; {TIMEOUT_ENV} sets the limit in seconds");
+            let limit =
+                format!("Killed it after {timeout:?}; {TIMEOUT_ENV} sets the limit in seconds");
+            let stderr = fs::read(stderr.path())?;
+            let stderr = String::from_utf8_lossy(&stderr);
+            let stderr = stderr.trim_end();
+            if stderr.is_empty() {
+                anyhow::bail!(limit);
+            }
+            anyhow::bail!("{limit}; stderr:\n{stderr}");
         }
         thread::sleep(POLL_INTERVAL);
     };
@@ -766,21 +775,22 @@ mod tests {
         }
     }
 
-    /// A tool that runs longer than its time is killed, and the run fails with the limit.
+    /// A tool that runs longer than its time is killed, and the run fails with the limit and with
+    /// what the tool printed to stderr.
     #[test]
     fn test_output_within_kills() {
-        let mut cmd = Command::new("sleep");
-        cmd.arg("10");
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "echo started >&2; exec sleep 10"]);
         let start = Instant::now();
 
-        let result = output_within(&mut cmd, Duration::from_millis(100));
+        let result = output_within(&mut cmd, Duration::from_secs(1));
 
         let elapsed = start.elapsed();
         assert!(elapsed < Duration::from_secs(5), "{elapsed:?}");
         let message = result.unwrap_err().to_string();
         assert_eq!(
             message,
-            "Killed it after 100ms; XPMD_TIMEOUT sets the limit in seconds"
+            "Killed it after 1s; XPMD_TIMEOUT sets the limit in seconds; stderr:\nstarted"
         );
     }
 
