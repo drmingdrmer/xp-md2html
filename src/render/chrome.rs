@@ -1,7 +1,5 @@
 use std::cell::OnceCell;
 use std::fs;
-use std::io;
-use std::io::Read;
 use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
@@ -10,11 +8,11 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::thread;
-use std::thread::JoinHandle;
 use std::time::Duration;
 use std::time::Instant;
 
 use anyhow::Context;
+use tempfile::NamedTempFile;
 use tempfile::TempDir;
 
 use crate::mime::Mime;
@@ -566,16 +564,18 @@ fn env_var(name: &str) -> anyhow::Result<Option<String>> {
 }
 
 /// Run `cmd` and return its output once it exits; kill it and fail when it runs longer than
-/// `timeout`. Two threads read its stdout and stderr while it runs, so a full pipe cannot stall it.
+/// `timeout`. Its stdout and stderr go into temporary files, which hold all its output once it
+/// exits. A pipe would end only when the last process that holds it exits, and GoogleUpdater,
+/// which Chrome may start, holds Chrome's stdout and stderr long after Chrome exits.
 fn output_within(cmd: &mut Command, timeout: Duration) -> anyhow::Result<Output> {
+    let stdout = NamedTempFile::new()?;
+    let stderr = NamedTempFile::new()?;
+    let stdout_writer = stdout.reopen()?;
+    let stderr_writer = stderr.reopen()?;
     cmd.stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stdout(stdout_writer)
+        .stderr(stderr_writer);
     let mut child = cmd.spawn()?;
-    let stdout = child.stdout.take().context("The run has no stdout")?;
-    let stderr = child.stderr.take().context("The run has no stderr")?;
-    let stdout_reader = thread::spawn(move || read_all(stdout));
-    let stderr_reader = thread::spawn(move || read_all(stderr));
 
     let start = Instant::now();
     let status = loop {
@@ -583,7 +583,6 @@ fn output_within(cmd: &mut Command, timeout: Duration) -> anyhow::Result<Output>
             break status;
         }
         if start.elapsed() > timeout {
-            // A helper process of Chrome may keep a pipe open, so the readers are left to end alone.
             child.kill()?;
             child.wait()?;
             anyhow::bail!("Killed it after {timeout:?}; {TIMEOUT_ENV} sets the limit in seconds");
@@ -591,29 +590,13 @@ fn output_within(cmd: &mut Command, timeout: Duration) -> anyhow::Result<Output>
         thread::sleep(POLL_INTERVAL);
     };
 
-    let stdout = join(stdout_reader)?;
-    let stderr = join(stderr_reader)?;
+    let stdout = fs::read(stdout.path())?;
+    let stderr = fs::read(stderr.path())?;
     Ok(Output {
         status,
         stdout,
         stderr,
     })
-}
-
-/// The bytes of `pipe` until the tool closes it.
-fn read_all(mut pipe: impl Read) -> io::Result<Vec<u8>> {
-    let mut data = Vec::new();
-    pipe.read_to_end(&mut data)?;
-    Ok(data)
-}
-
-/// The bytes that `reader`, a thread of [`read_all`], read.
-fn join(reader: JoinHandle<io::Result<Vec<u8>>>) -> anyhow::Result<Vec<u8>> {
-    let Ok(read) = reader.join() else {
-        anyhow::bail!("The thread that reads a pipe of the tool panicked");
-    };
-    let data = read?;
-    Ok(data)
 }
 
 /// A [`ChromeRenderer`] that looks for Chrome on its first use, and for ImageMagick on its first
@@ -799,6 +782,24 @@ mod tests {
             message,
             "Killed it after 100ms; XPMD_TIMEOUT sets the limit in seconds"
         );
+    }
+
+    /// A run ends when the tool exits, though a process that the tool started still holds the
+    /// tool's stdout and stderr, as GoogleUpdater does for Chrome.
+    #[test]
+    fn test_output_within_ends_with_tool() {
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "sleep 10 & echo out; echo err >&2"]);
+        let start = Instant::now();
+
+        let output = output_within(&mut cmd, Duration::from_secs(30)).unwrap();
+
+        let elapsed = start.elapsed();
+        assert!(elapsed < Duration::from_secs(5), "{elapsed:?}");
+        let code = output.status.code();
+        assert_eq!(code, Some(0));
+        assert_eq!(output.stdout, b"out\n");
+        assert_eq!(output.stderr, b"err\n");
     }
 
     /// A renderer whose Chrome is a path that names no file.
