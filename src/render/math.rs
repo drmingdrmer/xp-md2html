@@ -62,8 +62,8 @@ pub fn math_to_svg(renderer: &ChromeRenderer, tex: &str, display: bool) -> anyho
     extract_svg(&dom)
 }
 
-/// The image of `tex` that `renderer` makes, in a window that fits the formula plus [`PADDING`]; a
-/// fixed window would cut a wide or tall formula off.
+/// The image of `tex` that `renderer` makes, in its window grown to fit the formula plus
+/// [`PADDING`]; a fixed window would cut a wide or tall formula off.
 ///
 /// One run of Chrome measures the formula on the page, and a second one takes the screenshot.
 pub fn math_to_image(
@@ -74,7 +74,7 @@ pub fn math_to_image(
     let page = math_page(tex, display);
     let dom = renderer.dump_dom(&page)?;
     let (right, bottom) = formula_edges(&dom)?;
-    let fitted = renderer.with_window(
+    let fitted = renderer.with_window_at_least(
         right.saturating_add(PADDING),
         bottom.saturating_add(PADDING),
     );

@@ -25,11 +25,11 @@ pub fn svg_page(svg: &str) -> String {
     )
 }
 
-/// The image of `svg` that `renderer` makes, in a window that fits the SVG plus [`PADDING`]; a
-/// fixed window would cut a wide diagram off.
+/// The image of `svg` that `renderer` makes, in its window grown to fit the SVG plus [`PADDING`];
+/// a fixed window would cut a wide diagram off.
 pub fn svg_to_image(renderer: &ChromeRenderer, svg: &str) -> anyhow::Result<Vec<u8>> {
     let (width, height) = svg_size(svg)?;
-    let fitted = renderer.with_window(
+    let fitted = renderer.with_window_at_least(
         width.saturating_add(2 * PADDING),
         height.saturating_add(2 * PADDING),
     );

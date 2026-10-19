@@ -201,6 +201,16 @@ impl ChromeRenderer {
         self.with_window(width, self.config.height)
     }
 
+    /// A renderer like this one, with a window at least `width` by `height` pixels and at least as
+    /// large as this one's. Chrome 155 on GitHub's runner image macos-26-arm64 20261013.0424.1 took
+    /// the screenshot of a small window, such as 79x32 pixels, about 20 seconds late. On a page with
+    /// a transparent background, the trim cuts the rest of the window off the image.
+    pub fn with_window_at_least(&self, width: u32, height: u32) -> Self {
+        let width = width.max(self.config.width);
+        let height = height.max(self.config.height);
+        self.with_window(width, height)
+    }
+
     /// Return the DOM of `input` as Chrome serializes it once the page has loaded and its scripts have run.
     ///
     /// A script that finishes its work in a timer callback, as mermaid does in `setTimeout(..., 0)`,
@@ -754,6 +764,23 @@ mod tests {
         let dumped = renderer.dump_dom("<p>a</p>");
         let message = dumped.unwrap_err().to_string();
         assert_eq!(message, expected);
+    }
+
+    /// Each side of the window grows to the asked size where that passes the renderer's side, and
+    /// keeps the renderer's side elsewhere.
+    #[test]
+    fn test_with_window_at_least() {
+        let renderer = renderer_without_chrome(1000, 2000, 2);
+        let cases = [
+            ((79, 32), (1000, 2000)),
+            ((3000, 40), (3000, 2000)),
+            ((50, 4000), (1000, 4000)),
+        ];
+        for ((width, height), expected) in cases {
+            let fitted = renderer.with_window_at_least(width, height);
+            let window = (fitted.config.width, fitted.config.height);
+            assert_eq!(window, expected, "{width}x{height}");
+        }
     }
 
     /// A tool that runs longer than its time is killed, and the run fails with the limit.

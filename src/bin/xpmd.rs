@@ -277,7 +277,7 @@ struct RenderMarkdownArgs {
     bare: bool,
 }
 
-/// The window of the DOM dump that draws a formula or a diagram; an image gets one that fits.
+/// The window of the DOM dump that draws a formula or a diagram; an image gets it, grown to fit.
 const MATH_WINDOW_WIDTH: u32 = 1000;
 const MATH_WINDOW_HEIGHT: u32 = 2000;
 
