@@ -76,10 +76,10 @@ fn test_render_markdown_reads_stdin() -> Result<()> {
     Ok(())
 }
 
-/// `xp-md2html` keeps raw HTML, such as the tables and formula images in md2zhihu's wechat
-/// output, and still escapes a `<` in text.
+/// `render-markdown --bare` keeps raw HTML, such as the tables and formula images in md2zhihu's
+/// wechat output, and still escapes a `<` in text.
 #[test]
-fn test_xp_md2html_keeps_raw_html() -> Result<()> {
+fn test_render_markdown_keeps_raw_html() -> Result<()> {
     let markdown = "<table>\n\
                     <tr>\n\
                     <td>a</td>\n\
@@ -87,8 +87,9 @@ fn test_xp_md2html_keeps_raw_html() -> Result<()> {
                     </table>\n\
                     \n\
                     Math <img src=\"https://www.zhihu.com/equation?tex=x%5E2\" alt=\"x^2\" class=\"ee_img tr_noresize\" eeimg=\"1\"> and `a < b`.\n";
-    let result =
-        Command::new(env!("CARGO_BIN_EXE_xp-md2html")).output_ok_with_stdin(markdown.as_bytes())?;
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["render-markdown", "--bare"])
+        .output_ok_with_stdin(markdown.as_bytes())?;
 
     let stderr = String::from_utf8(result.stderr)?;
     assert_eq!(stderr, "");
@@ -101,7 +102,7 @@ fn test_xp_md2html_keeps_raw_html() -> Result<()> {
          <td>a</td>\n\
          </tr>\n\
          </table>\n\
-         <p>Math <img src=\"https://www.zhihu.com/equation?tex=x%5E2\" alt=\"x^2\" class=\"ee_img tr_noresize\" eeimg=\"1\"> and <code>a &lt; b</code>.</p>\n\n"
+         <p>Math <img src=\"https://www.zhihu.com/equation?tex=x%5E2\" alt=\"x^2\" class=\"ee_img tr_noresize\" eeimg=\"1\"> and <code>a &lt; b</code>.</p>\n"
     );
     Ok(())
 }
