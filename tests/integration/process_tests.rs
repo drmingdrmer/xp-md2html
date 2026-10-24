@@ -1510,6 +1510,34 @@ fn test_process_preset_keep_front_matter() -> Result<()> {
     dir.close()
 }
 
+/// `xpmd process --preset hugo` prints a formula alone in its paragraph between `\[` and `\]`, and a
+/// formula in a sentence between `$$` and `$$`, each on one line without its `%` comment.
+#[test]
+fn test_process_preset_hugo() -> Result<()> {
+    let dir = TestDir::new()?;
+    let input = dir.path().join("post.md");
+    fs::write(
+        &input,
+        "$$\nE = mc^2 % energy\n$$\n\nThe cost $$O(n\n\\log n)$$ is low.\n",
+    )?;
+    let output = dir.path().join("out/post.md");
+
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--preset", "hugo", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&output)
+        .output_ok()?;
+
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+
+    let markdown = fs::read_to_string(&output)?;
+    let expected_markdown = "\\[E = mc^2\\]\n\nThe cost $$O(n \\log n)$$ is low.\n";
+    assert_eq!(markdown, expected_markdown);
+    dir.close()
+}
+
 /// `xpmd process --refs FILE --preset zhihu` resolves a reference that the markdown does not
 /// define: from the `universal` list of the file, from the front matter's `refs`, and from its
 /// `platform_refs.zhihu`, which replaces `refs`; the markdown's own definition wins, and the

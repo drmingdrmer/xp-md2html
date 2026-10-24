@@ -27,7 +27,7 @@ pub fn apply(root: Node<'_>) {
 
 /// `tex` on one line: each line without its `%` comment and trimmed, joined with spaces. TeX reads
 /// a line break as a space and ignores a comment, so the formula stays the same.
-fn one_line(tex: &str) -> String {
+pub(crate) fn one_line(tex: &str) -> String {
     let mut parts = Vec::new();
     for line in tex.lines() {
         let code = strip_comment(line).trim();

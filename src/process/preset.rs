@@ -8,7 +8,8 @@ use super::Action;
 use crate::render::math_img::MathService;
 
 /// The names that `--preset` takes, as error messages list them.
-pub const PRESET_NAMES: &str = "zhihu, github, wechat, weibo, simple, minimal_mistake, transparent";
+pub const PRESET_NAMES: &str =
+    "zhihu, github, wechat, weibo, simple, minimal_mistake, hugo, transparent";
 
 /// An md2zhihu platform, named as md2zhihu's `--platform` names it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,6 +26,9 @@ pub enum Preset {
     Simple,
     /// The jekyll theme minimal mistakes: diagrams as PNGs.
     MinimalMistake,
+    /// Hugo with its passthrough extension: what minimal_mistake gets, and each formula on one line
+    /// between Hugo's math delimiters.
+    Hugo,
     /// Nothing but the steps that every preset runs.
     Transparent,
 }
@@ -40,6 +44,7 @@ impl FromStr for Preset {
             "weibo" => Ok(Self::Weibo),
             "simple" => Ok(Self::Simple),
             "minimal_mistake" => Ok(Self::MinimalMistake),
+            "hugo" => Ok(Self::Hugo),
             "transparent" => Ok(Self::Transparent),
             _ => Err(format!("unknown preset: {name}; one of: {PRESET_NAMES}")),
         }
@@ -56,6 +61,7 @@ impl Preset {
             Self::Weibo => "weibo",
             Self::Simple => "simple",
             Self::MinimalMistake => "minimal_mistake",
+            Self::Hugo => "hugo",
             Self::Transparent => "transparent",
         }
     }
@@ -125,6 +131,11 @@ impl Preset {
                 Action::CodespanToText,
             ],
             Self::MinimalMistake => vec![Action::MermaidToImage, Action::GraphvizToImage],
+            Self::Hugo => vec![
+                Action::MermaidToImage,
+                Action::GraphvizToImage,
+                Action::MathToHugo,
+            ],
             Self::Transparent => vec![],
         }
     }
@@ -141,7 +152,7 @@ mod tests {
 
         let error = Preset::from_str("medium");
         let expected_error = "unknown preset: medium; \
-                              one of: zhihu, github, wechat, weibo, simple, minimal_mistake, transparent";
+                              one of: zhihu, github, wechat, weibo, simple, minimal_mistake, hugo, transparent";
         assert_eq!(error, Err(expected_error.to_string()));
     }
 
@@ -155,6 +166,7 @@ mod tests {
             Preset::Weibo,
             Preset::Simple,
             Preset::MinimalMistake,
+            Preset::Hugo,
             Preset::Transparent,
         ];
         let mut names = Vec::new();

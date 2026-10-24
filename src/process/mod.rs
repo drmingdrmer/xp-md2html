@@ -13,6 +13,7 @@ pub mod join_math_block;
 pub mod link_to_asset;
 pub mod math_block_to_one_line;
 pub mod math_inline_to_text;
+pub mod math_to_hugo;
 pub mod math_to_image;
 pub mod math_to_img_tag;
 pub mod mermaid_to_image;
@@ -201,6 +202,9 @@ pub enum Action {
     AppendReferenceList,
     /// Print every `$$` formula in a list item on one line.
     MathBlockToOneLine,
+    /// Print every formula on one line for Hugo's passthrough extension: between `\[` and `\]` when
+    /// it is alone in its paragraph, else between `$$` and `$$`.
+    MathToHugo,
     /// Replace every inline formula with Unicode text.
     MathInlineToText,
     /// Replace every code span with its text.
@@ -273,6 +277,7 @@ impl FromStr for Action {
             ("drop-front-matter", None) => Ok(Self::DropFrontMatter),
             ("append-reference-list", None) => Ok(Self::AppendReferenceList),
             ("math-block-to-one-line", None) => Ok(Self::MathBlockToOneLine),
+            ("math-to-hugo", None) => Ok(Self::MathToHugo),
             ("math-inline-to-text", None) => Ok(Self::MathInlineToText),
             ("codespan-to-text", None) => Ok(Self::CodespanToText),
             ("flatten-lists", None) => Ok(Self::FlattenLists),
@@ -331,6 +336,10 @@ impl Action {
             }
             Self::MathBlockToOneLine => {
                 math_block_to_one_line::apply(root);
+                Ok(())
+            }
+            Self::MathToHugo => {
+                math_to_hugo::apply(root);
                 Ok(())
             }
             Self::MathInlineToText => math_inline_to_text::apply(root),
