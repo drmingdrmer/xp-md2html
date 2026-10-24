@@ -1102,14 +1102,20 @@ fn test_process_image_to_asset_url_escapes() -> Result<()> {
     let dir = TestDir::new()?;
     let input_dir = dir.path().join("posts");
     fs::create_dir_all(&input_dir)?;
-    for name in ["my pic.svg", "图.svg", "100%.svg", "pic.svg"] {
+    for name in [
+        "my pic.svg",
+        "图.svg",
+        "100%.svg",
+        "pic.svg",
+        "icon&copy;.svg",
+    ] {
         fs::write(input_dir.join(name), RED_SVG)?;
     }
     let input = input_dir.join("post.md");
     fs::write(
         &input,
         "![a](my%20pic.svg) ![b](<my pic.svg>) ![c](%E5%9B%BE.svg) ![d](图.svg) \
-         ![e](100%25.svg) ![f](pic.svg?v=2) ![g](pic.svg#icon)\n",
+         ![e](100%25.svg) ![f](pic.svg?v=2) ![g](pic.svg#icon) ![h](icon&amp;copy;.svg)\n",
     )?;
     let output = dir.path().join("out/post.md");
     let assets = dir.path().join("out/assets#1");
@@ -1132,7 +1138,7 @@ fn test_process_image_to_asset_url_escapes() -> Result<()> {
     let expected_markdown = format!(
         "![a]({base}-my%20pic.svg) ![b]({base}-my%20pic.svg) ![c]({base}-图.svg) \
          ![d]({base}-图.svg) ![e]({base}-100%25.svg) ![f]({base}-pic.svg?v=2) \
-         ![g]({base}-pic.svg#icon)\n"
+         ![g]({base}-pic.svg#icon) ![h]({base}-icon&amp;copy;.svg)\n"
     );
     assert_eq!(markdown, expected_markdown);
 
@@ -1146,6 +1152,7 @@ fn test_process_image_to_asset_url_escapes() -> Result<()> {
     copies.sort();
     let expected_copies = [
         "aa5290abd426-100%.svg",
+        "aa5290abd426-icon&copy;.svg",
         "aa5290abd426-my pic.svg",
         "aa5290abd426-pic.svg",
         "aa5290abd426-图.svg",
@@ -1578,6 +1585,42 @@ fn test_process_refs() -> Result<()> {
                              - own : <https://own.com>\n\n\
                              - protobuf : <https://pb.com>\n";
     assert_eq!(markdown, expected_markdown);
+    dir.close()
+}
+
+/// External, front-matter and document definitions retain literal entity text in their URLs.
+#[test]
+fn test_process_reference_destination_entities() -> Result<()> {
+    let dir = TestDir::new()?;
+    let refs = dir.path().join("refs.yml");
+    fs::write(
+        &refs,
+        "universal:\n  external: https://a.com/?q=&amp;copy;\n",
+    )?;
+    let input = "---\nrefs:\n  front: https://a.com/?q=&amp;#169;\n---\n\n\
+                 [x][external] [y][front] [z][own] ![i][front]\n\n\
+                 [own]: https://a.com/?q=&amp;#xA9;\n";
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .current_dir(dir.path())
+        .args(["process", "--refs"])
+        .arg(&refs)
+        .args([
+            "--action",
+            "drop-front-matter",
+            "--action",
+            "append-reference-list",
+        ])
+        .output_ok_with_stdin(input.as_bytes())?;
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+    let stdout = String::from_utf8(result.stdout)?;
+    let expected = "[x](https://a.com/?q=&amp;copy;) [y](https://a.com/?q=&amp;#169;) \
+                    [z](https://a.com/?q=&amp;#xA9;) ![i](https://a.com/?q=&amp;#169;)\n\n\
+                    Reference:\n\n\
+                    - external : <https://a.com/?q=&amp;copy;>\n\n\
+                    - front : <https://a.com/?q=&amp;#169;>\n\n\
+                    - own : <https://a.com/?q=&amp;#xA9;>\n";
+    assert_eq!(stdout, expected);
     dir.close()
 }
 

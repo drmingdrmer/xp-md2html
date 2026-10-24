@@ -456,6 +456,7 @@ pub fn process_markdown(
     escape_dollars(&arena, root);
     unescape_brackets(&arena, root);
     emphasis::prepare(&arena, &loader.emphasis.borrow());
+    escape_link_destinations(root)?;
 
     let mut out = String::new();
     comrak::format_commonmark(root, &options, &mut out)?;
@@ -464,6 +465,29 @@ pub fn process_markdown(
     // such a line, as md2zhihu prints it.
     let out = join_math_block::join(&out);
     Ok(out)
+}
+
+/// Escape entity-like ampersands only when printing, after actions have used the actual URLs.
+fn escape_link_destinations(root: Node<'_>) -> anyhow::Result<()> {
+    let reference = Regex::new(r"&(?=#[0-9]{1,7};|#[xX][0-9a-fA-F]{1,6};|[A-Za-z][A-Za-z0-9]*;)")?;
+    let scheme = Regex::new(r"^[A-Za-z][A-Za-z0-9.+-]{1,31}:")?;
+    for node in root.descendants() {
+        let mut ast = node.data_mut();
+        let is_link = matches!(ast.value, NodeValue::Link(_));
+        let link = match &mut ast.value {
+            NodeValue::Link(link) | NodeValue::Image(link) => link,
+            _ => continue,
+        };
+        let escaped = reference.try_replacen(&link.url, 0, "&amp;")?;
+        let has_scheme = scheme.is_match(&link.url)?;
+        if is_link && link.title.is_empty() && has_scheme {
+            let old_text = link.url.strip_prefix("mailto:").unwrap_or(&link.url);
+            let new_text = escaped.strip_prefix("mailto:").unwrap_or(&escaped);
+            rewrite_urls::replace_url_text(node, old_text, new_text);
+        }
+        link.url = escaped.into_owned();
+    }
+    Ok(())
 }
 
 /// Write each `$` in a text node under `root` as `\$`. comrak prints a text `$` bare, also with
@@ -777,6 +801,41 @@ mod tests {
         let mut out = String::new();
         comrak::format_commonmark(root, &options, &mut out)?;
         assert_eq!(out, markdown);
+        Ok(())
+    }
+
+    /// Parsed destinations, link text and image alt text survive another Markdown parse.
+    #[test]
+    fn test_escape_link_destinations() -> anyhow::Result<()> {
+        let cases = [
+            "[x](https://a.com/?q=&amp;copy; \"Title\")",
+            "![x](https://a.com/?q=&amp;copy; \"Title\")",
+            "[x](https://a.com/?q=&amp;#169;&amp;#xA9;&amp;#XA9;)",
+            "[x](https://a.com/?q=&amp;amp;copy;)",
+            "[x](https://a.com/?a=1&b=2)",
+            "[x](https://a.com/?q=&copy&noSuchEntity;)",
+            "[x][r]\n\n[r]: https://a.com/?q=&amp;copy;",
+            "![x][r]\n\n[r]: https://a.com/?q=&amp;#169;",
+            "<https://a.com/?q=&amp;copy;>",
+            "<https://a.com/?q=&amp;#169;>",
+            "[https://a.com/?q=&amp;copy;](https://a.com/?q=&amp;copy; \"Title\")",
+            "[a&amp;copy;](a&amp;copy;)",
+            "[dir/a:b&amp;copy;](dir/a:b&amp;copy;)",
+            "<mailto:a&amp;copy;@example.com>",
+            "<a&amp;#169;@example.com>",
+            "<a&amp;copy;@example.com>",
+        ];
+        let arena = Arena::new();
+        let options = gfm_math_options();
+        for markdown in cases {
+            let root = comrak::parse_document(&arena, markdown, &options);
+            let expected = comrak::markdown_to_html(markdown, &options);
+            escape_link_destinations(root)?;
+            let mut written = String::new();
+            comrak::format_commonmark(root, &options, &mut written)?;
+            let actual = comrak::markdown_to_html(&written, &options);
+            assert_eq!(actual, expected, "{markdown:?} became {written:?}");
+        }
         Ok(())
     }
 

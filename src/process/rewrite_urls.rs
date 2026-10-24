@@ -96,7 +96,7 @@ pub fn apply_to_links(root: Node<'_>, rule: &UrlRewrite) -> anyhow::Result<()> {
 }
 
 /// Replace the text of `link` with `new_url` when the text is `old_url` alone.
-fn replace_url_text(link: Node<'_>, old_url: &str, new_url: &str) {
+pub(super) fn replace_url_text(link: Node<'_>, old_url: &str, new_url: &str) {
     let Some(child) = link.first_child() else {
         return;
     };
