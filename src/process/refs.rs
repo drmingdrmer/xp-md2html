@@ -33,6 +33,13 @@ struct Definition {
     title: String,
 }
 
+/// A parsed document and the source information needed when printing the edited tree.
+pub(crate) struct Parsed<'a> {
+    pub root: Node<'a>,
+    pub references: Vec<(Node<'a>, String)>,
+    pub emphasis: Vec<(Node<'a>, &'static str)>,
+}
+
 /// Link reference definitions from outside the markdown file.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Refs {
@@ -74,13 +81,13 @@ impl Refs {
     }
 
     /// Parse `markdown` into a tree in `arena`; a reference resolves with the markdown's own
-    /// definition, else with these definitions. Return the tree, and each link that a reference
-    /// `[text][label]`, `[label][]` or `[label]` made, with the label of its definition, in order.
+    /// definition, else with these definitions. Return the tree, the used reference links and
+    /// their labels in order, and the original delimiters of nested emphasis spans.
     pub(crate) fn parse<'a>(
         &self,
         arena: &'a Arena<'a>,
         markdown: &str,
-    ) -> anyhow::Result<(Node<'a>, Vec<(Node<'a>, String)>)> {
+    ) -> anyhow::Result<Parsed<'a>> {
         // comrak resolves a reference with the markdown's own definition and leaves no trace. So a
         // mark after the `[` of each such definition hides it from comrak: every reference then
         // goes to the callback, which gives a URL that names the label, and the walk after the
@@ -142,7 +149,12 @@ impl Refs {
                 _ => {}
             }
         }
-        Ok((root, links))
+        let emphasis = super::emphasis::markers(root, &marked);
+        Ok(Parsed {
+            root,
+            references: links,
+            emphasis,
+        })
     }
 
     /// Add the `universal` list of the YAML file at `path`, then its list named by `platform`.
@@ -467,7 +479,11 @@ mod tests {
 
         let markdown = "[a][big name], [own], ![i][own] and [none].\n\n[Own]: http://f/own\n";
         let arena = Arena::new();
-        let (root, links) = refs.parse(&arena, markdown)?;
+        let Parsed {
+            root,
+            references: links,
+            ..
+        } = refs.parse(&arena, markdown)?;
 
         let mut out = String::new();
         let options = super::super::gfm_math_options();
@@ -513,7 +529,11 @@ mod tests {
         let mut expected = String::new();
         comrak::format_commonmark(comrak_root, &options, &mut expected)?;
 
-        let (root, links) = Refs::default().parse(&arena, markdown)?;
+        let Parsed {
+            root,
+            references: links,
+            ..
+        } = Refs::default().parse(&arena, markdown)?;
         let mut out = String::new();
         comrak::format_commonmark(root, &options, &mut out)?;
         assert_eq!(out, expected);
@@ -526,7 +546,7 @@ mod tests {
     /// The markdown of the tree that `refs` parses from `markdown`.
     fn format_parsed(refs: &Refs, markdown: &str) -> anyhow::Result<String> {
         let arena = Arena::new();
-        let (root, _) = refs.parse(&arena, markdown)?;
+        let Parsed { root, .. } = refs.parse(&arena, markdown)?;
         let mut out = String::new();
         let options = super::super::gfm_math_options();
         comrak::format_commonmark(root, &options, &mut out)?;

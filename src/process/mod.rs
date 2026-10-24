@@ -6,6 +6,7 @@ pub mod codespan_to_text;
 pub mod download_images;
 pub mod drop_front_matter;
 pub mod embed_markdown;
+mod emphasis;
 pub mod flatten_lists;
 pub mod graphviz_to_image;
 pub mod image_to_asset;
@@ -384,6 +385,8 @@ pub struct Loader<'a> {
     /// Each link that a reference made, with the label of its definition, in the order of the
     /// parses.
     references: RefCell<Vec<(Node<'a>, String)>>,
+    /// The original delimiters of each emphasis span, including spans in embedded files.
+    emphasis: RefCell<Vec<(Node<'a>, &'static str)>>,
 }
 
 impl<'a> Loader<'a> {
@@ -394,6 +397,7 @@ impl<'a> Loader<'a> {
             arena,
             joins: actions.contains(&Action::JoinMathBlock),
             references: RefCell::default(),
+            emphasis: RefCell::default(),
         }
     }
 
@@ -405,9 +409,10 @@ impl<'a> Loader<'a> {
         } else {
             markdown.to_string()
         };
-        let (root, references) = refs.parse(self.arena, &markdown)?;
-        self.references.borrow_mut().extend(references);
-        Ok(root)
+        let parsed = refs.parse(self.arena, &markdown)?;
+        self.references.borrow_mut().extend(parsed.references);
+        self.emphasis.borrow_mut().extend(parsed.emphasis);
+        Ok(parsed.root)
     }
 
     /// Each link that a reference `[text][label]`, `[label][]` or `[label]` made, with the label of
@@ -450,6 +455,7 @@ pub fn process_markdown(
     }
     escape_dollars(&arena, root);
     unescape_brackets(&arena, root);
+    emphasis::prepare(&arena, &loader.emphasis.borrow());
 
     let mut out = String::new();
     comrak::format_commonmark(root, &options, &mut out)?;

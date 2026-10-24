@@ -1751,6 +1751,30 @@ fn test_process_stdin_to_stdout() -> Result<()> {
     Ok(())
 }
 
+/// Nested spans keep their original pairing after embedding and converting code and math to text.
+#[test]
+fn test_process_nested_emphasis() -> Result<()> {
+    let dir = TestDir::new()?;
+    let embedded = dir.path().join("sub.md");
+    fs::write(&embedded, "中文 _*强调*文字_\n\n*_b_`c`*\n\n*_b_$x$*\n")?;
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .current_dir(dir.path())
+        .args(["process", "--action", "embed-markdown"])
+        .args([
+            "--action",
+            "codespan-to-text",
+            "--action",
+            "math-inline-to-text",
+        ])
+        .output_ok_with_stdin(b"*__*x*__*\n\n![](sub.md)\n")?;
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(stderr, "");
+    let stdout = String::from_utf8(result.stdout)?;
+    let expected = "*__*x*__*\n\n中文 _*强调*文字_\n\n*_b_&#99;*\n\n*_b_&#120;*\n";
+    assert_eq!(stdout, expected);
+    dir.close()
+}
+
 /// With stdin and stdout, `xpmd process` takes the current directory as the directory of the input
 /// and of the output, and names the files that the actions create after stdin.
 #[test]
