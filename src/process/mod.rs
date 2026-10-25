@@ -550,7 +550,7 @@ pub fn process_markdown_from(
     escape_dollars(&arena, root);
     unescape_brackets(&arena, root);
     emphasis::prepare(&arena, &loader.emphasis.borrow());
-    escape_link_destinations(root)?;
+    escape_link_attributes(root)?;
 
     let mut out = String::new();
     let mut options = loader.options.clone();
@@ -563,8 +563,8 @@ pub fn process_markdown_from(
     Ok(out)
 }
 
-/// Escape entity-like ampersands only when printing, after actions have used the actual URLs.
-fn escape_link_destinations(root: Node<'_>) -> anyhow::Result<()> {
+/// Escape entity-like ampersands only when printing, after actions have used the actual attributes.
+fn escape_link_attributes(root: Node<'_>) -> anyhow::Result<()> {
     let reference = Regex::new(r"&(?=#[0-9]{1,7};|#[xX][0-9a-fA-F]{1,6};|[A-Za-z][A-Za-z0-9]*;)")?;
     let scheme = Regex::new(r"^[A-Za-z][A-Za-z0-9.+-]{1,31}:")?;
     for node in root.descendants() {
@@ -582,6 +582,8 @@ fn escape_link_destinations(root: Node<'_>) -> anyhow::Result<()> {
             rewrite_urls::replace_url_text(node, old_text, new_text);
         }
         link.url = escaped.into_owned();
+        let title = reference.try_replacen(&link.title, 0, "&amp;")?;
+        link.title = title.into_owned();
     }
     Ok(())
 }
@@ -941,7 +943,7 @@ mod tests {
         for markdown in cases {
             let root = comrak::parse_document(&arena, markdown, &options);
             let expected = comrak::markdown_to_html(markdown, &options);
-            escape_link_destinations(root)?;
+            escape_link_attributes(root)?;
             let mut written = String::new();
             comrak::format_commonmark(root, &options, &mut written)?;
             let actual = comrak::markdown_to_html(&written, &options);

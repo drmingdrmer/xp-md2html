@@ -7,6 +7,7 @@ use std::process::Command;
 use anyhow::Context;
 use anyhow::Result;
 use comrak::nodes::NodeCodeBlock;
+use comrak::nodes::NodeLink;
 use comrak::nodes::NodeList;
 use comrak::nodes::NodeValue;
 use comrak::Arena;
@@ -202,6 +203,53 @@ fn test_empty_links_and_brackets_in_code_and_math() -> Result<()> {
         let written = process_markdown(input, &[], &ctx)?;
         let actual = xp_md2html::render::markdown::markdown_to_html(&written);
         assert_eq!(actual, expected, "{input:?} became {written:?}");
+    }
+    dir.close()
+}
+
+#[test]
+fn test_link_titles_preserve_literal_entities() -> Result<()> {
+    let dir = TestDir::new()?;
+    let mut ctx = context(dir.path(), false);
+    let cases = [
+        ("[x](u \"&amp;copy;\")", "&copy;"),
+        (
+            "![x](u \"&amp;#169; &amp;#xA9; &amp;#XA9;\")",
+            "&#169; &#xA9; &#XA9;",
+        ),
+        ("[x][r]\n\n[r]: u '&amp;amp;copy;'", "&amp;copy;"),
+        (
+            "---\nrefs:\n  r: 'u \"&amp;copy;\"'\n---\n\n[x][r]",
+            "&copy;",
+        ),
+        (
+            "![x][r]\n\n[r]: u \"&copy; &amp;noSuchEntity;\"",
+            "© &noSuchEntity;",
+        ),
+        (
+            "[x](u \"a&amp;b &amp;copy &amp;#1 &quot;quoted&quot;\")",
+            "a&b &copy &#1 \"quoted\"",
+        ),
+    ];
+    for (source, title) in cases {
+        ctx.refs = Refs::load(&[], source, None)?;
+        let written = process_markdown(source, &[], &ctx)?;
+        let arena = Arena::new();
+        let loader = Loader::new(&arena, &[]);
+        let root = loader.load(&written, &Refs::default())?;
+        let mut links = Vec::new();
+        for node in root.descendants() {
+            if let NodeValue::Link(link) | NodeValue::Image(link) = &node.data().value {
+                links.push((**link).clone());
+            }
+        }
+        let expected = vec![NodeLink {
+            url: "u".into(),
+            title: title.into(),
+        }];
+        assert_eq!(links, expected, "{source:?} became {written:?}");
+        let repeated = process_markdown(&written, &[], &ctx)?;
+        assert_eq!(repeated, written);
     }
     dir.close()
 }
