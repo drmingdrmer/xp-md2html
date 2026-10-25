@@ -171,8 +171,7 @@ fn test_commonmark_roundtrips() -> Result<()> {
 
 #[test]
 fn test_md2zhihu_roundtrips_with_known_losses() -> Result<()> {
-    // Tight-list block boundaries and TeX pipe escapes are existing losses. Pin their exact
-    // output so both new regressions and fixes require an explicit baseline update.
+    // Pin the remaining TeX pipe escape loss until its formatter handling is fixed.
     check_roundtrips(
         include_str!("../fixtures/md2zhihu-cases.json"),
         include_str!("../fixtures/md2zhihu-known-changes.json"),
@@ -248,6 +247,37 @@ fn test_link_titles_preserve_literal_entities() -> Result<()> {
             title: title.into(),
         }];
         assert_eq!(links, expected, "{source:?} became {written:?}");
+        let repeated = process_markdown(&written, &[], &ctx)?;
+        assert_eq!(repeated, written);
+    }
+    dir.close()
+}
+
+#[test]
+fn test_list_block_boundaries_survive_roundtrips() -> Result<()> {
+    let dir = TestDir::new()?;
+    let ctx = context(dir.path(), false);
+    let cases = [
+        "- > quote\n  >\n  after\n",
+        "- before\n  ***\n",
+        "- ***\n",
+        "1. before\n   ***\n   after\n",
+        "- > quote\n  >\n  after\n- next\n",
+        "- > > quote\n  >\n  after\n",
+        "- > ```\n  > code\n  > ```\n  after\n",
+        "- > - nested\n  >\n  after\n",
+        "- > quote\n  >\n  ***\n  after\n",
+        "- [x] > quote\n  >\n  after\n",
+        "> - > quote\n>   >\n>   after\n",
+        "- - > quote\n    >\n    after\n",
+        "- > quote\n  >\n  after\n\n- loose\n",
+        "- first\n\n- ***\n",
+    ];
+    for source in cases {
+        let expected = document_meaning(source, false)?;
+        let written = process_markdown(source, &[], &ctx)?;
+        let actual = document_meaning(&written, false)?;
+        assert_eq!(actual, expected, "{source:?} became {written:?}");
         let repeated = process_markdown(&written, &[], &ctx)?;
         assert_eq!(repeated, written);
     }

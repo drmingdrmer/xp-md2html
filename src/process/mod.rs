@@ -1,6 +1,7 @@
 //! The `process` subcommand: parse a markdown file, apply actions to its tree in order, print the tree.
 
 pub mod append_reference_list;
+mod block_boundaries;
 pub mod code_to_image;
 pub mod codespan_to_text;
 pub mod download_images;
@@ -551,6 +552,7 @@ pub fn process_markdown_from(
     unescape_brackets(&arena, root);
     emphasis::prepare(&arena, &loader.emphasis.borrow());
     escape_link_attributes(root)?;
+    block_boundaries::prepare(&arena, root);
 
     let mut out = String::new();
     let mut options = loader.options.clone();
