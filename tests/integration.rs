@@ -4,6 +4,7 @@
 mod integration {
     pub mod golden_master_tests;
     pub mod pdf_tests;
+    pub mod process_regression_tests;
     pub mod process_tests;
     pub mod render_code_tests;
     pub mod render_graphviz_tests;

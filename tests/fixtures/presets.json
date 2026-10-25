@@ -1,0 +1,126 @@
+{
+  "files": {
+    "post.md": "---\ntitle: Preset regression\nrefs:\n  r: https://parent.test/api \"API\"\n---\n\n# A *sample*\n\nA [manual][r] and [download](file.txt?raw=1#part \"Download\").\n\nhttps://bare.test\n\n![](part.md)\n\n| icon | value |\n| --- | --- |\n| ![icon](icon.svg) | **one** |\n\n```rust\nlet x = 1;\n```\n\n> ```rust\n> let x = 1;\n> ```\n\n\n```\nplain code\n```\n\nInline $x$ and again $x$.\n\n$$x$$\n\n```mermaid\ngraph LR\n  A --> B\n```\n\n```graphviz\ndigraph { a -> b }\n```\n",
+    "part.md": "- Embedded **item** with [child][r].\n\n  > A quote with `code`.\n\n![icon](icon.svg)\n\n[r]: https://child.test/api\n",
+    "icon.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"12\" height=\"8\"><rect width=\"12\" height=\"8\" fill=\"red\"/></svg>\n",
+    "file.txt": "complete attachment bytes\n"
+  },
+  "renders": {
+    "table": {
+      "action": "table-to-image",
+      "markdown": "| icon | value |\n| --- | --- |\n| ![icon](icon.svg) | **one** |\n",
+      "asset": "post-table-ad08418f80fa.png"
+    },
+    "code": {
+      "action": "code-to-image",
+      "markdown": "```rust\nlet x = 1;\n```\n",
+      "asset": "post-code-eae1eecc4f59.png"
+    },
+    "plain": {
+      "action": "code-to-image",
+      "markdown": "```\nplain code\n```\n",
+      "asset": "post-code-63d3e67e58bd.png"
+    },
+    "math-inline": {
+      "action": "math-to-image",
+      "markdown": "Inline $x$.\n",
+      "asset": "post-math-22bf003d6cac.png"
+    },
+    "math-display": {
+      "action": "math-to-image",
+      "markdown": "$$x$$\n",
+      "asset": "post-math-cf4d7cb6a3b9.png"
+    },
+    "mermaid": {
+      "action": "mermaid-to-image",
+      "markdown": "```mermaid\ngraph LR\n  A --> B\n```\n",
+      "asset": "post-mermaid-1cd39c59532a.png"
+    },
+    "graphviz": {
+      "action": "graphviz-to-image",
+      "markdown": "```graphviz\ndigraph { a -> b }\n```\n",
+      "asset": "post-graphviz-4cc7c33aeebd.png"
+    }
+  },
+  "outputs": {
+    "zhihu": {
+      "markdown": "# A *sample*\n\nA [manual](https://parent.test/api \"API\") and [download](assets/file.txt?raw=1#part \"Download\").\n\n<https://bare.test>\n\n- Embedded **item** with [child](https://child.test/api).\n  \n  > A quote with `code`.\n\n![icon](assets/547135354fb4-icon.svg)\n\n<table>\n<tr>\n<th>icon</th>\n<th>value</th>\n</tr>\n<tr>\n<td><img src=\"assets/547135354fb4-icon.svg\" alt=\"icon\" /></td>\n<td><strong>one</strong></td>\n</tr>\n</table>\n\n```rust\nlet x = 1;\n```\n\n> \n> \n> ```rust\n> let x = 1;\n> ```\n\n```\nplain code\n```\n\nInline <img src=\"https://www.zhihu.com/equation?tex=x\" alt=\"x\" class=\"ee_img tr_noresize\" eeimg=\"1\"> and again <img src=\"https://www.zhihu.com/equation?tex=x\" alt=\"x\" class=\"ee_img tr_noresize\" eeimg=\"1\">.\n\n<img src=\"https://www.zhihu.com/equation?tex=x%5C%5C\" alt=\"x\\\\\" class=\"ee_img tr_noresize\" eeimg=\"1\">\n\n![](assets/post-mermaid-1cd39c59532a.png)\n\n![](assets/post-graphviz-4cc7c33aeebd.png)\n\nReference:\n\n- API : <https://parent.test/api>\n\n- r-2 : <https://child.test/api>\n",
+      "assets": {
+        "547135354fb4-icon.svg": "file:icon.svg",
+        "file.txt": "file:file.txt",
+        "post-graphviz-4cc7c33aeebd.png": "render:graphviz",
+        "post-mermaid-1cd39c59532a.png": "render:mermaid"
+      }
+    },
+    "github": {
+      "markdown": "# A *sample*\n\nA [manual](https://parent.test/api \"API\") and [download](assets/file.txt?raw=1#part \"Download\").\n\n<https://bare.test>\n\n- Embedded **item** with [child](https://child.test/api).\n  \n  > A quote with `code`.\n\n![icon](assets/547135354fb4-icon.svg)\n\n| icon | value |\n| --- | --- |\n| ![icon](assets/547135354fb4-icon.svg) | **one** |\n\n```rust\nlet x = 1;\n```\n\n> \n> \n> ```rust\n> let x = 1;\n> ```\n\n```\nplain code\n```\n\nInline $x$ and again $x$.\n\n$$x$$\n\n```mermaid\ngraph LR\n  A --> B\n```\n\n![](assets/post-graphviz-4cc7c33aeebd.png)\n\nReference:\n\n- API : <https://parent.test/api>\n\n- r-2 : <https://child.test/api>\n",
+      "assets": {
+        "547135354fb4-icon.svg": "file:icon.svg",
+        "file.txt": "file:file.txt",
+        "post-graphviz-4cc7c33aeebd.png": "render:graphviz"
+      }
+    },
+    "wechat": {
+      "markdown": "# A *sample*\n\nA [manual](https://parent.test/api \"API\") and [download](assets/file.txt?raw=1#part \"Download\").\n\n<https://bare.test>\n\n- Embedded **item** with [child](https://child.test/api).\n  \n  > A quote with `code`.\n\n![icon](assets/547135354fb4-icon.svg)\n\n<table>\n<tr>\n<th>icon</th>\n<th>value</th>\n</tr>\n<tr>\n<td><img src=\"assets/547135354fb4-icon.svg\" alt=\"icon\" /></td>\n<td><strong>one</strong></td>\n</tr>\n</table>\n\n![](assets/post-code-eae1eecc4f59.png)\n\n> ![](assets/post-code-eae1eecc4f59.png)\n\n![](assets/post-code-63d3e67e58bd.png)\n\nInline <img src=\"https://www.zhihu.com/equation?tex=x\" alt=\"x\" class=\"ee_img tr_noresize\" eeimg=\"1\"> and again <img src=\"https://www.zhihu.com/equation?tex=x\" alt=\"x\" class=\"ee_img tr_noresize\" eeimg=\"1\">.\n\n<img src=\"https://www.zhihu.com/equation?tex=x%5C%5C\" alt=\"x\\\\\" class=\"ee_img tr_noresize\" eeimg=\"1\">\n\n![](assets/post-mermaid-1cd39c59532a.png)\n\n![](assets/post-graphviz-4cc7c33aeebd.png)\n\nReference:\n\n- API : <https://parent.test/api>\n\n- r-2 : <https://child.test/api>\n",
+      "assets": {
+        "547135354fb4-icon.svg": "file:icon.svg",
+        "file.txt": "file:file.txt",
+        "post-code-63d3e67e58bd.png": "render:plain",
+        "post-code-eae1eecc4f59.png": "render:code",
+        "post-graphviz-4cc7c33aeebd.png": "render:graphviz",
+        "post-mermaid-1cd39c59532a.png": "render:mermaid"
+      }
+    },
+    "weibo": {
+      "markdown": "# A *sample*\n\nA [manual](https://parent.test/api \"API\") and [download](assets/file.txt?raw=1#part \"Download\").\n\n<https://bare.test>\n\nEmbedded **item** with [child](https://child.test/api).\n\nA quote with code.\n\n![icon](assets/547135354fb4-icon.svg)\n\n![](assets/post-table-3759fa6d2bb6.png)\n\n![](assets/post-code-eae1eecc4f59.png)\n\n![](assets/post-code-eae1eecc4f59.png)\n\n![](assets/post-code-63d3e67e58bd.png)\n\nInline x and again x.\n\n<img src=\"https://www.zhihu.com/equation?tex=x%5C%5C\" alt=\"x\\\\\" class=\"ee_img tr_noresize\" eeimg=\"1\">\n\n![](assets/post-mermaid-1cd39c59532a.png)\n\n![](assets/post-graphviz-4cc7c33aeebd.png)\n\nReference:\n\nAPI : <https://parent.test/api>\n\nr-2 : <https://child.test/api>\n",
+      "assets": {
+        "547135354fb4-icon.svg": "file:icon.svg",
+        "file.txt": "file:file.txt",
+        "post-code-63d3e67e58bd.png": "render:plain",
+        "post-code-eae1eecc4f59.png": "render:code",
+        "post-graphviz-4cc7c33aeebd.png": "render:graphviz",
+        "post-mermaid-1cd39c59532a.png": "render:mermaid",
+        "post-table-3759fa6d2bb6.png": "render:table"
+      }
+    },
+    "simple": {
+      "markdown": "# A *sample*\n\nA [manual](https://parent.test/api \"API\") and [download](assets/file.txt?raw=1#part \"Download\").\n\n<https://bare.test>\n\n- Embedded **item** with [child](https://child.test/api).\n  \n  > A quote with code.\n\n![icon](assets/547135354fb4-icon.svg)\n\n![](assets/post-table-3759fa6d2bb6.png)\n\n![](assets/post-code-eae1eecc4f59.png)\n\n> ![](assets/post-code-eae1eecc4f59.png)\n\n![](assets/post-code-63d3e67e58bd.png)\n\nInline ![](assets/post-math-22bf003d6cac.png) and again ![](assets/post-math-22bf003d6cac.png).\n\n![](assets/post-math-cf4d7cb6a3b9.png)\n\n![](assets/post-mermaid-1cd39c59532a.png)\n\n![](assets/post-graphviz-4cc7c33aeebd.png)\n\nReference:\n\n- API : <https://parent.test/api>\n\n- r-2 : <https://child.test/api>\n",
+      "assets": {
+        "547135354fb4-icon.svg": "file:icon.svg",
+        "file.txt": "file:file.txt",
+        "post-code-63d3e67e58bd.png": "render:plain",
+        "post-code-eae1eecc4f59.png": "render:code",
+        "post-graphviz-4cc7c33aeebd.png": "render:graphviz",
+        "post-math-22bf003d6cac.png": "render:math-inline",
+        "post-math-cf4d7cb6a3b9.png": "render:math-display",
+        "post-mermaid-1cd39c59532a.png": "render:mermaid",
+        "post-table-3759fa6d2bb6.png": "render:table"
+      }
+    },
+    "minimal_mistake": {
+      "markdown": "# A *sample*\n\nA [manual](https://parent.test/api \"API\") and [download](assets/file.txt?raw=1#part \"Download\").\n\nhttps://bare.test\n\n- Embedded **item** with [child](https://child.test/api).\n  \n  > A quote with `code`.\n\n![icon](assets/547135354fb4-icon.svg)\n\n| icon | value |\n| --- | --- |\n| ![icon](assets/547135354fb4-icon.svg) | **one** |\n\n```rust\nlet x = 1;\n```\n\n> \n> \n> ```rust\n> let x = 1;\n> ```\n\n```\nplain code\n```\n\nInline $x$ and again $x$.\n\n$$x$$\n\n![](assets/post-mermaid-1cd39c59532a.png)\n\n![](assets/post-graphviz-4cc7c33aeebd.png)\n\nReference:\n\n- API : <https://parent.test/api>\n\n- r-2 : <https://child.test/api>\n",
+      "assets": {
+        "547135354fb4-icon.svg": "file:icon.svg",
+        "file.txt": "file:file.txt",
+        "post-graphviz-4cc7c33aeebd.png": "render:graphviz",
+        "post-mermaid-1cd39c59532a.png": "render:mermaid"
+      }
+    },
+    "hugo": {
+      "markdown": "# A *sample*\n\nA [manual](https://parent.test/api \"API\") and [download](assets/file.txt?raw=1#part \"Download\").\n\nhttps://bare.test\n\n- Embedded **item** with [child](https://child.test/api).\n  \n  > A quote with `code`.\n\n![icon](assets/547135354fb4-icon.svg)\n\n| icon | value |\n| --- | --- |\n| ![icon](assets/547135354fb4-icon.svg) | **one** |\n\n```rust\nlet x = 1;\n```\n\n> \n> \n> ```rust\n> let x = 1;\n> ```\n\n```\nplain code\n```\n\nInline $$x$$ and again $$x$$.\n\n\\[x\\]\n\n![](assets/post-mermaid-1cd39c59532a.png)\n\n![](assets/post-graphviz-4cc7c33aeebd.png)\n\nReference:\n\n- API : <https://parent.test/api>\n\n- r-2 : <https://child.test/api>\n",
+      "assets": {
+        "547135354fb4-icon.svg": "file:icon.svg",
+        "file.txt": "file:file.txt",
+        "post-graphviz-4cc7c33aeebd.png": "render:graphviz",
+        "post-mermaid-1cd39c59532a.png": "render:mermaid"
+      }
+    },
+    "transparent": {
+      "markdown": "# A *sample*\n\nA [manual](https://parent.test/api \"API\") and [download](assets/file.txt?raw=1#part \"Download\").\n\n<https://bare.test>\n\n- Embedded **item** with [child](https://child.test/api).\n  \n  > A quote with `code`.\n\n![icon](assets/547135354fb4-icon.svg)\n\n| icon | value |\n| --- | --- |\n| ![icon](assets/547135354fb4-icon.svg) | **one** |\n\n```rust\nlet x = 1;\n```\n\n> \n> \n> ```rust\n> let x = 1;\n> ```\n\n```\nplain code\n```\n\nInline $x$ and again $x$.\n\n$$x$$\n\n```mermaid\ngraph LR\n  A --> B\n```\n\n```graphviz\ndigraph { a -> b }\n```\n\nReference:\n\n- API : <https://parent.test/api>\n\n- r-2 : <https://child.test/api>\n",
+      "assets": {
+        "547135354fb4-icon.svg": "file:icon.svg",
+        "file.txt": "file:file.txt"
+      }
+    }
+  }
+}
