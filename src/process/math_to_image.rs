@@ -64,7 +64,8 @@ fn formula_of(node: Node<'_>) -> Option<(String, bool)> {
     let NodeValue::Math(math) = &ast.value else {
         return None;
     };
-    Some((math.literal.clone(), math.display_math))
+    let display = super::math_syntax::is_display(node);
+    Some((math.literal.clone(), display))
 }
 
 /// Render `tex`, in the display style when `display` is set, to a PNG in `ctx.assets_dir` and

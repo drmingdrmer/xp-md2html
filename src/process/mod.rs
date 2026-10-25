@@ -14,6 +14,7 @@ pub mod join_math_block;
 pub mod link_to_asset;
 pub mod math_block_to_one_line;
 pub mod math_inline_to_text;
+mod math_syntax;
 pub mod math_to_hugo;
 pub mod math_to_image;
 pub mod math_to_img_tag;
@@ -409,7 +410,9 @@ impl<'a> Loader<'a> {
         } else {
             markdown.to_string()
         };
-        let parsed = refs.parse(self.arena, &markdown)?;
+        let prepared = math_syntax::prepare(&markdown)?;
+        let parsed = refs.parse(self.arena, &prepared.markdown)?;
+        prepared.restore(parsed.root);
         self.references.borrow_mut().extend(parsed.references);
         self.emphasis.borrow_mut().extend(parsed.emphasis);
         Ok(parsed.root)

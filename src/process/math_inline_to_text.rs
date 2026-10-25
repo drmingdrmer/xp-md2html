@@ -11,16 +11,17 @@ use techxt::mathfmt::FontStyleKind;
 use techxt::mathfmt::MathWrapDelims;
 use techxt::Converter;
 
-/// Replace every `$..$` formula under `root`, also in the `` $`..`$ `` syntax, with its text; a
-/// `$$..$$` formula stays.
+/// Replace formulas inside inline content with text; a formula that starts its paragraph and
+/// ends a line keeps its math, independently of its dollar count.
 pub fn apply(root: Node<'_>) -> anyhow::Result<()> {
     let converter = text_converter()?;
     for node in root.descendants() {
+        let display = super::math_syntax::is_display(node);
         let mut ast = node.data_mut();
         let NodeValue::Math(math) = &ast.value else {
             continue;
         };
-        if math.display_math {
+        if display {
             continue;
         }
         let text = to_text(&converter, &math.literal)?;

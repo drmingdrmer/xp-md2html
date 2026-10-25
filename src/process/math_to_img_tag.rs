@@ -18,8 +18,9 @@ const HTML_BLOCK_TYPE_OTHER_TAG: u8 = 7;
 /// `math_inline_to_imgtag` and `math_block_to_imgtag` do.
 pub fn apply(root: Node<'_>, service: MathService) {
     for node in root.descendants() {
+        let display = super::math_syntax::is_display(node);
         let mut ast = node.data_mut();
-        let Some(html) = img_html(&ast.value, service) else {
+        let Some(html) = img_html(&ast.value, service, display) else {
             continue;
         };
         ast.value = html;
@@ -27,10 +28,10 @@ pub fn apply(root: Node<'_>, service: MathService) {
 }
 
 /// The raw HTML that replaces `value` when it is a formula or a ```` ```math ```` block.
-fn img_html(value: &NodeValue, service: MathService) -> Option<NodeValue> {
+fn img_html(value: &NodeValue, service: MathService, display: bool) -> Option<NodeValue> {
     match value {
         NodeValue::Math(math) => {
-            let tag = math_img_tag(service, &math.literal, math.display_math);
+            let tag = math_img_tag(service, &math.literal, display);
             Some(NodeValue::HtmlInline(tag))
         }
         NodeValue::CodeBlock(code) => {

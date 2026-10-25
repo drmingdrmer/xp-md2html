@@ -798,6 +798,42 @@ fn test_process_math_inline_to_text() -> Result<()> {
     dir.close()
 }
 
+/// Placement sets the render style in both the input and embedded files, regardless of dollar count.
+#[test]
+fn test_process_embedded_math_placement() -> Result<()> {
+    let dir = TestDir::new()?;
+    fs::write(dir.path().join("post.md"), "$q$\n\n![](sub.md)\n")?;
+    fs::write(
+        dir.path().join("sub.md"),
+        "$ x $\n\nA $$y$$ and [$$z$$][r].\n\n[r]: https://example.invalid\n",
+    )?;
+    let cases = [
+        ("math-to-image=codecogs", "![](https://latex.codecogs.com/svg.image?%5Cdisplaystyle%20q)\n\n\
+         ![](https://latex.codecogs.com/svg.image?%5Cdisplaystyle%20x)\n\n\
+         A ![](https://latex.codecogs.com/svg.image?y) and [![](https://latex.codecogs.com/svg.image?z)](https://example.invalid).\n"),
+        ("math-inline-to-text", "$q$\n\n$ x $\n\nA y and [z](https://example.invalid).\n"),
+    ];
+    for (action, expected) in cases {
+        let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+            .current_dir(dir.path())
+            .args([
+                "process",
+                "-i",
+                "post.md",
+                "--action",
+                "embed-markdown",
+                "--action",
+                action,
+            ])
+            .output_ok()?;
+        let stderr = String::from_utf8(result.stderr)?;
+        assert_eq!(stderr, "");
+        let stdout = String::from_utf8(result.stdout)?;
+        assert_eq!(stdout, expected);
+    }
+    dir.close()
+}
+
 /// `xpmd process --action codespan-to-text` writes each code span as escaped text.
 #[test]
 fn test_process_codespan_to_text() -> Result<()> {
