@@ -38,7 +38,7 @@ pub fn apply<'a>(arena: &'a Arena<'a>, root: Node<'a>, loader: &Loader<'a>) {
     };
     let list = arena.alloc(NodeValue::List(list_meta).into());
     for reference in references {
-        let paragraph = reference_paragraph(arena, reference);
+        let paragraph = reference_paragraph(arena, reference, loader);
         let item = arena.alloc(NodeValue::Item(list_meta).into());
         item.append(paragraph);
         list.append(item);
@@ -49,11 +49,25 @@ pub fn apply<'a>(arena: &'a Arena<'a>, root: Node<'a>, loader: &Loader<'a>) {
 /// The paragraph `<title, or label> : <url>` of `reference`. The URL is a link node, so a later
 /// `rewrite-link-urls` rewrites it; comrak writes a link whose text is its URL as `<url>`, which
 /// renders the same as md2zhihu's `[url](url)`.
-fn reference_paragraph<'a>(arena: &'a Arena<'a>, reference: Reference) -> Node<'a> {
-    let name = reference.title.unwrap_or(reference.label);
-    let text = arena.alloc(NodeValue::Text(format!("{name} : ").into()).into());
-
-    let url_text = arena.alloc(NodeValue::Text(reference.url.clone().into()).into());
+fn reference_paragraph<'a>(
+    arena: &'a Arena<'a>,
+    reference: Reference,
+    loader: &Loader<'a>,
+) -> Node<'a> {
+    let paragraph = match reference.title {
+        Some(title) => {
+            let paragraph: Node<'a> = arena.alloc(NodeValue::Paragraph.into());
+            let title = title.trim_start_matches([' ', '\t']);
+            let text = arena.alloc(NodeValue::Text(title.to_string().into()).into());
+            paragraph.append(text);
+            paragraph
+        }
+        None => label_paragraph(loader, &reference.label),
+    };
+    let separator = arena.alloc(NodeValue::Text(" : ".into()).into());
+    paragraph.append(separator);
+    let displayed_url = super::percent_decode(&reference.url);
+    let url_text = arena.alloc(NodeValue::Text(displayed_url.into()).into());
     let link = NodeLink {
         url: reference.url,
         title: String::new(),
@@ -61,9 +75,27 @@ fn reference_paragraph<'a>(arena: &'a Arena<'a>, reference: Reference) -> Node<'
     let link = arena.alloc(NodeValue::Link(Box::new(link)).into());
     link.append(url_text);
 
-    let paragraph = arena.alloc(NodeValue::Paragraph.into());
-    paragraph.append(text);
     paragraph.append(link);
+    paragraph
+}
+
+/// A plain prefix keeps `1. Intro` and other block markers in inline content.
+fn label_paragraph<'a>(loader: &Loader<'a>, label: &str) -> Node<'a> {
+    let label = label.replace(['\r', '\n'], " ");
+    let label = label.trim_start_matches([' ', '\t']);
+    let markdown = format!("x {label}");
+    let options = super::gfm_math_options();
+    let root = comrak::parse_document(loader.arena, &markdown, &options);
+    let markers = super::emphasis::markers(root, &markdown);
+    loader.emphasis.borrow_mut().extend(markers);
+    let paragraph = root.first_child().expect("the prefix makes a paragraph");
+    let first = paragraph.first_child().expect("the prefix makes text");
+    let mut data = first.data_mut();
+    let NodeValue::Text(text) = &mut data.value else {
+        unreachable!("the prefix is plain text");
+    };
+    *text = text[2..].to_string().into();
+    paragraph.detach();
     paragraph
 }
 

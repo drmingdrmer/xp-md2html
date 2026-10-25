@@ -393,7 +393,7 @@ fn collect_definitions(
 ) -> anyhow::Result<()> {
     if let mdast::Node::Definition(definition) = node {
         let label = definition.label.clone();
-        let found = Definition {
+        let mut found = Definition {
             label: label.unwrap_or_else(|| definition.identifier.clone()),
             url: definition.url.clone(),
             title: definition.title.clone().unwrap_or_default(),
@@ -414,6 +414,7 @@ fn collect_definitions(
         let written = written_label(&markdown[offset..])
             .with_context(|| format!("The definition of {} has no ]", found.label))?;
         let key = normalize_label(written);
+        found.label = written.to_string();
         definitions.push((offset, key, found));
     }
 
@@ -665,7 +666,7 @@ mod tests {
         assert_eq!(out, expected);
 
         let labels: Vec<String> = links.into_iter().map(|(_, label)| label).collect();
-        assert_eq!(labels, ["a", "b", "c", "a*b", "d"]);
+        assert_eq!(labels, ["a", "b", "c", "a\\*b", "d"]);
         Ok(())
     }
 

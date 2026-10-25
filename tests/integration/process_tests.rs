@@ -11,6 +11,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 use std::time::Instant;
 
+use anyhow::Context;
 use anyhow::Result;
 use image::Rgba;
 use sha2::Digest;
@@ -613,6 +614,46 @@ fn test_process_rewrite_reference_list() -> Result<()> {
                                  Reference:\n\n\
                                  - P : <https://new.com/p>\n";
         assert_eq!(markdown, expected_markdown);
+    }
+    dir.close()
+}
+
+/// Labels use inline Markdown; titles and decoded URL text retain their literal characters.
+#[test]
+fn test_process_reference_list_inline_labels() -> Result<()> {
+    let dir = TestDir::new()?;
+    let input = dir.path().join("post.md");
+    fs::write(&input, "[a][`code`] [b][title] [c][1. Intro] [d][a\\*b] [e][*_nested_*]\n\n\
+        [`code`]: https://en.wikipedia.org/wiki/Zipf%27s_law\n\
+        [title]: https://old.invalid/%E5%9B%BE?q=%26copy%3B%26%23169%3B%5Bx%5D%60y%60_a_%26amp%3Bcopy%3B \"1. *Intro*\"\n\
+        [1. Intro]: https://old.invalid/1\n\
+        [a\\*b]: https://old.invalid/2\n\
+        [*_nested_*]: https://old.invalid/3\n")?;
+    let rule = "rewrite-link-urls=/old[.]invalid/new.invalid/";
+    for actions in [["append-reference-list", rule], [
+        rule,
+        "append-reference-list",
+    ]] {
+        let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+            .args([
+                "process", "--action", actions[0], "--action", actions[1], "-i",
+            ])
+            .arg(&input)
+            .output_ok()?;
+        let stderr = String::from_utf8(result.stderr)?;
+        assert_eq!(stderr, "");
+        let stdout = String::from_utf8(result.stdout)?;
+        let (_, list) = stdout
+            .split_once("\n\nReference:\n\n")
+            .context("missing reference list")?;
+        let options = xp_md2html::process::gfm_math_options();
+        let html = comrak::markdown_to_html(list, &options);
+        let expected = concat!("<ul>\n<li>\n<p><em><em>nested</em></em> : <a href=\"https://new.invalid/3\">https://new.invalid/3</a></p>\n</li>\n",
+            "<li>\n<p>1. Intro : <a href=\"https://new.invalid/1\">https://new.invalid/1</a></p>\n</li>\n",
+            "<li>\n<p><code>code</code> : <a href=\"https://en.wikipedia.org/wiki/Zipf%27s_law\">https://en.wikipedia.org/wiki/Zipf's_law</a></p>\n</li>\n",
+            "<li>\n<p>a*b : <a href=\"https://new.invalid/2\">https://new.invalid/2</a></p>\n</li>\n",
+            "<li>\n<p>1. *Intro* : <a href=\"https://new.invalid/%E5%9B%BE?q=%26copy%3B%26%23169%3B%5Bx%5D%60y%60_a_%26amp%3Bcopy%3B\">https://new.invalid/图?q=&amp;copy;&amp;#169;[x]`y`_a_&amp;amp;copy;</a></p>\n</li>\n</ul>\n");
+        assert_eq!(html, expected);
     }
     dir.close()
 }

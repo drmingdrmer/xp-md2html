@@ -678,6 +678,11 @@ pub(crate) fn split_suffix(url: &str) -> (&str, &str) {
 /// when the decoded bytes are not UTF-8.
 pub(crate) fn url_path(url: &str) -> String {
     let (path, _) = split_suffix(url);
+    percent_decode(path)
+}
+
+/// Decode percent-escaped UTF-8, keeping invalid escapes and invalid UTF-8 unchanged.
+pub(crate) fn percent_decode(path: &str) -> String {
     let mut decoded = Vec::new();
     let mut rest = path.as_bytes();
     while let Some((&byte, after)) = rest.split_first() {

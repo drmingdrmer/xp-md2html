@@ -89,29 +89,35 @@ pub fn apply_to_links(root: Node<'_>, rule: &UrlRewrite) -> anyhow::Result<()> {
             continue;
         };
         let url = rule.rewrite(&link.url)?;
-        replace_url_text(node, &link.url, &url);
+        let replaced = replace_url_text(node, &link.url, &url);
+        if !replaced {
+            let old_display = super::percent_decode(&link.url);
+            let new_display = super::percent_decode(&url);
+            replace_url_text(node, &old_display, &new_display);
+        }
         link.url = url;
     }
     Ok(())
 }
 
-/// Replace the text of `link` with `new_url` when the text is `old_url` alone.
-pub(super) fn replace_url_text(link: Node<'_>, old_url: &str, new_url: &str) {
+/// Replace the text of `link` with `new_url` when it is `old_url` alone; return whether it matched.
+pub(super) fn replace_url_text(link: Node<'_>, old_url: &str, new_url: &str) -> bool {
     let Some(child) = link.first_child() else {
-        return;
+        return false;
     };
     let only_child = child.next_sibling().is_none();
     if !only_child {
-        return;
+        return false;
     }
     let mut ast = child.data_mut();
     let NodeValue::Text(text) = &mut ast.value else {
-        return;
+        return false;
     };
     if text.as_ref() != old_url {
-        return;
+        return false;
     }
     *text = new_url.to_string().into();
+    true
 }
 
 #[cfg(test)]
@@ -119,6 +125,20 @@ mod tests {
     use comrak::Arena;
 
     use super::*;
+
+    #[test]
+    fn test_rewrite_decoded_url_text_once() -> anyhow::Result<()> {
+        let arena = Arena::new();
+        let options = super::super::gfm_math_options();
+        let root = comrak::parse_document(&arena, "[a%](a%25) [a%25](a%25)", &options);
+        let parsed = "/%25/%2525/".parse();
+        let rule = parsed.map_err(anyhow::Error::msg)?;
+        apply_to_links(root, &rule)?;
+        let mut out = String::new();
+        comrak::format_commonmark(root, &options, &mut out)?;
+        assert_eq!(out, "[a%25](a%2525) [a%2525](a%2525)\n");
+        Ok(())
+    }
 
     /// A rule takes any delimiter, and Python's `\1` for a group.
     #[test]
