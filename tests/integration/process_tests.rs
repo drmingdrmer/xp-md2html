@@ -2012,6 +2012,41 @@ fn test_process_embed_nested() -> Result<()> {
     dir.close()
 }
 
+#[test]
+fn test_process_fenced_plain_code() -> Result<()> {
+    let cases = [
+        "```\nfirst\n```\n\n```\nsecond\n```\n",
+        "> ```\n> quote\n> ```\n>\n> ```\n> next\n> ```\n",
+        "- before\n\n  ```\n  first\n  ```\n\n  ```\n  second\n  ```\n\n  after\n",
+        "- > `````\n  > before ``` after\n  > ````\n  > \n  > tail\n  > `````\n",
+        "    indented\n    code\n",
+    ];
+    for input in cases {
+        let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+            .arg("process")
+            .output_ok_with_stdin(input.as_bytes())?;
+        let actual = String::from_utf8(result.stdout)?;
+        let expected_html = xp_md2html::render::markdown::markdown_to_html(input);
+        let actual_html = xp_md2html::render::markdown::markdown_to_html(&actual);
+        assert_eq!(actual_html, expected_html);
+
+        let arena = comrak::Arena::new();
+        let options = xp_md2html::process::gfm_math_options();
+        let root = comrak::parse_document(&arena, &actual, &options);
+        for node in root.descendants() {
+            if let comrak::nodes::NodeValue::CodeBlock(code) = &node.data().value {
+                assert!(code.fenced, "{actual}");
+                let runs = code.literal.split(|c| c != '`');
+                let lengths = runs.map(str::len);
+                let longest = lengths.max().unwrap_or(0);
+                let fence_length = usize::from(code.fence_length);
+                assert!(fence_length > longest, "{actual}");
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Without `-i`, `-o` and `--action`, `xpmd process` reads stdin, and writes only the markdown,
 /// parsed and printed again, to stdout.
 #[test]

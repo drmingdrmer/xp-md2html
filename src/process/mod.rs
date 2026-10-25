@@ -523,7 +523,8 @@ pub fn process_markdown_from(
     ctx: &ActionContext,
     source: &Path,
 ) -> anyhow::Result<String> {
-    let options = gfm_math_options();
+    let mut options = gfm_math_options();
+    options.render.prefer_fenced = true;
     let arena = Arena::new();
     let loader = Loader::new(&arena, actions);
     let root = loader.load_from(markdown, &ctx.refs, source)?;
