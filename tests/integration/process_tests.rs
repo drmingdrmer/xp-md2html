@@ -2085,7 +2085,7 @@ fn test_process_fenced_plain_code() -> Result<()> {
                 let runs = code.literal.split(|c| c != '`');
                 let lengths = runs.map(str::len);
                 let longest = lengths.max().unwrap_or(0);
-                let fence_length = usize::from(code.fence_length);
+                let fence_length = code.fence_length;
                 assert!(fence_length > longest, "{actual}");
             }
         }
