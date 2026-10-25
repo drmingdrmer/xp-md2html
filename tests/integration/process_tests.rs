@@ -1483,11 +1483,11 @@ fn test_process_url_base_assets_outside() -> Result<()> {
         .env_remove("RUST_LIB_BACKTRACE")
         .output_bounded()?;
 
-    assert_eq!(result.status.code(), Some(1));
+    assert_eq!(result.status.code(), Some(2));
 
     let stderr = String::from_utf8(result.stderr)?;
     let expected_stderr = format!(
-        "Error: With --url-base, --assets must be inside the output file's directory {}: {}\n",
+        "error: With --url-base, --assets must be inside the output file's directory {}: {}\n",
         output_dir.display(),
         assets.display()
     );
@@ -2171,14 +2171,7 @@ fn test_process_invalid_output_before_assets() -> Result<()> {
     fs::write(dir.path().join("post.md"), "```\ncode\n```\n")?;
     fs::write(dir.path().join("file"), "keep")?;
     fs::create_dir(dir.path().join("folder"))?;
-    let outputs = [
-        "folder",
-        "folder/",
-        ".",
-        "new/",
-        "file/out.md",
-        "file/new/out.md",
-    ];
+    let outputs = ["folder", ".", "file/out.md", "file/new/out.md"];
     for output in outputs {
         let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
             .current_dir(dir.path())

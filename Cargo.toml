@@ -23,6 +23,7 @@ techxt = "0.1.0"
 fancy-regex = "0.16"
 yaml-rust2 = "0.13"
 caseless = "0.2"
+same-file = "1.0"
 
 [dev-dependencies]
 image-compare = "0.4"

@@ -18,7 +18,6 @@ use xp_md2html::process::code_to_image::CodeWidths;
 use xp_md2html::process::embed_markdown;
 use xp_md2html::process::preset::Preset;
 use xp_md2html::process::refs::Refs;
-use xp_md2html::process::relative_url;
 use xp_md2html::process::Action;
 use xp_md2html::process::ActionContext;
 use xp_md2html::render::chrome::ChromeRenderer;
@@ -39,6 +38,9 @@ use xp_md2html::render::math_img::MathService;
 use xp_md2html::render::mermaid::mermaid_to_svg;
 use xp_md2html::render::page::svg_to_image;
 
+#[path = "xpmd/batch.rs"]
+mod batch;
+
 #[derive(Parser)]
 #[command(name = "xpmd")]
 #[command(about = "A markdown to HTML/image converter with Chrome rendering")]
@@ -52,8 +54,8 @@ struct Cli {
 enum Commands {
     /// Render HTML content to image using headless Chrome
     RenderMarkup(RenderArgs),
-    /// Apply actions to a markdown file in order and write the result
-    Process(ProcessArgs),
+    /// Apply actions to markdown files in order and write the results
+    Process(batch::BatchArgs),
     /// Render a code snippet to an HTML page with syntax colors
     RenderCode(RenderCodeArgs),
     /// Render LaTeX math to SVG or an image with MathJax
@@ -105,7 +107,7 @@ struct RenderArgs {
 }
 
 /// The options of the `process` subcommand.
-#[derive(Args)]
+#[derive(Args, Clone)]
 struct ProcessArgs {
     /// Link bare URLs and email addresses [default: false for hugo/minimal_mistake, true otherwise]
     #[arg(long, value_name = "BOOL")]
@@ -115,11 +117,11 @@ struct ProcessArgs {
     #[arg(short, long)]
     input: Option<PathBuf>,
 
-    /// Output markdown file [default: stdout, with the current directory as its directory]
+    /// Output file or directory ending in /; {title} is the input stem without YYYY-MM-DD-; double literal braces as {{ or }} [default: stdout]
     #[arg(short, long)]
     output: Option<PathBuf>,
 
-    /// Directory for the files the actions create [default: the output file's directory]
+    /// Asset directory; accepts {title} [default: output directory, or OUTPUT_DIR/TITLE for batch, template, directory and Jekyll output]
     #[arg(long)]
     assets: Option<PathBuf>,
 
@@ -327,7 +329,7 @@ fn run() -> Result<()> {
             render_command(args)?;
         }
         Commands::Process(args) => {
-            process_command(args)?;
+            batch::process_command(args)?;
         }
         Commands::RenderCode(args) => {
             render_code_command(args)?;
@@ -654,19 +656,6 @@ fn process_command(args: ProcessArgs) -> Result<()> {
     let source = input.as_deref().unwrap_or_else(|| Path::new("<stdin>"));
     let refs = Refs::load(&ref_files, &markdown, platform)
         .with_context(|| format!("Failed to load references for {}", source.display()))?;
-
-    // A link behind the URL base cannot leave the output file's directory with `..`.
-    if url_base.is_some() {
-        let assets_path = relative_url(&output_dir, &assets_dir)?;
-        let first_part = assets_path.split('/').next();
-        if first_part == Some("..") {
-            anyhow::bail!(
-                "With --url-base, --assets must be inside the output file's directory {}: {}",
-                output_dir.display(),
-                assets_dir.display()
-            );
-        }
-    }
 
     fs::create_dir_all(&assets_dir).with_context(|| {
         format!(

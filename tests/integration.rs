@@ -2,6 +2,7 @@
 // This file is automatically discovered by cargo test
 
 mod integration {
+    pub mod batch_tests;
     pub mod golden_master_tests;
     pub mod pdf_tests;
     pub mod process_regression_tests;

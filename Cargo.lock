@@ -2355,6 +2355,7 @@ dependencies = [
  "markdown",
  "md-5",
  "pdf-extract",
+ "same-file",
  "serde",
  "serde_json",
  "sha2",
