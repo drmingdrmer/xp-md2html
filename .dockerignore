@@ -1,0 +1,12 @@
+*
+!Cargo.toml
+!Cargo.lock
+!rust-toolchain.toml
+!github-markdown.css
+!src/
+!src/**
+!vendor/
+!vendor/**
+!tests/
+!tests/container/
+!tests/container/smoke.sh
