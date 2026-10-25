@@ -1,6 +1,8 @@
 //! `append-reference-list`: append a list of the link references that the file uses, as md2zhihu's
 //! `render_ref_list` does.
 
+use std::collections::HashMap;
+
 use comrak::nodes::NodeLink;
 use comrak::nodes::NodeList;
 use comrak::nodes::NodeValue;
@@ -103,8 +105,9 @@ fn label_paragraph<'a>(loader: &Loader<'a>, label: &str) -> Node<'a> {
 /// Each takes its link's current URL and title, which shows the edits of the earlier actions; a
 /// link that an action took out of the tree, such as into the image of a table, counts too.
 fn used_references(loader: &Loader<'_>) -> Vec<Reference> {
-    let mut references = Vec::new();
-    for (node, label) in loader.references() {
+    let mut references: Vec<Reference> = Vec::new();
+    let mut names = HashMap::<String, usize>::new();
+    'links: for (node, label) in loader.references() {
         let data = node.data();
         let NodeValue::Link(link) = &data.value else {
             continue;
@@ -114,13 +117,26 @@ fn used_references(loader: &Loader<'_>) -> Vec<Reference> {
         } else {
             Some(link.title.clone())
         };
-        let reference = Reference {
+        let mut reference = Reference {
             label,
             url: link.url.clone(),
             title,
         };
-        if !references.contains(&reference) {
-            references.push(reference);
+        let original = reference.label.clone();
+        let mut suffix = 1;
+        loop {
+            let key = super::refs::normalize_label(&reference.label);
+            let Some(&index) = names.get(&key) else {
+                names.insert(key, references.len());
+                references.push(reference);
+                break;
+            };
+            let registered = &references[index];
+            if registered.url == reference.url && registered.title == reference.title {
+                continue 'links;
+            }
+            suffix += 1;
+            reference.label = format!("{original}-{suffix}");
         }
     }
     references.sort_by(|a, b| a.label.cmp(&b.label));
@@ -131,6 +147,33 @@ fn used_references(loader: &Loader<'_>) -> Vec<Reference> {
 mod tests {
     use super::*;
     use crate::process::refs::Refs;
+
+    #[test]
+    fn test_normalized_reference_names() -> anyhow::Result<()> {
+        let arena = Arena::new();
+        let loader = Loader::new(&arena, &[]);
+        let refs = Refs::default();
+        loader.load("[a b]\n\n[a b]: https://a.test\n", &refs)?;
+        loader.load("[A  B]\n\n[A  B]: https://a.test\n", &refs)?;
+        loader.load("[A B]\n\n[A B]: https://b.test\n", &refs)?;
+        loader.load("[a b]\n\n[a b]: https://b.test \"title\"\n", &refs)?;
+        let references = used_references(&loader);
+        let actual: Vec<_> = references
+            .into_iter()
+            .map(|reference| (reference.label, reference.url, reference.title))
+            .collect();
+        let expected = vec![
+            ("A B-2".into(), "https://b.test".into(), None),
+            ("a b".into(), "https://a.test".into(), None),
+            (
+                "a b-3".into(),
+                "https://b.test".into(),
+                Some("title".into()),
+            ),
+        ];
+        assert_eq!(actual, expected);
+        Ok(())
+    }
 
     /// Each used definition gets an item, sorted by label and named by its title if it has one; an
     /// unused definition, an inline link and a definition in a code block get none.

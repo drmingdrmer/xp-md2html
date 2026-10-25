@@ -471,7 +471,7 @@ fn resolve(value: &str) -> Option<(String, String)> {
 
 /// `label` as comrak looks a reference up: trimmed, with one space for each run of whitespace,
 /// and case-folded.
-fn normalize_label(label: &str) -> String {
+pub(super) fn normalize_label(label: &str) -> String {
     let words: Vec<&str> = label.split_whitespace().collect();
     let joined = words.join(" ");
     caseless::default_case_fold_str(&joined)

@@ -1867,6 +1867,40 @@ fn test_process_embed_reference_list() -> Result<()> {
     dir.close()
 }
 
+#[test]
+fn test_process_embed_reference_collisions() -> Result<()> {
+    let dir = TestDir::new()?;
+    fs::create_dir_all(dir.path().join("sub/inner"))?;
+    fs::write(
+        dir.path().join("post.md"),
+        "[parent][R]\n\n![](sub/a.md)\n\n![](sub/a.md)\n\n[R]: shared.pdf\n",
+    )?;
+    fs::write(
+        dir.path().join("sub/a.md"),
+        "[same][r] [child][R-2]\n\n![](inner/b.md)\n\n\
+         [r]: ../shared.pdf\n[R-2]: child.pdf\n",
+    )?;
+    fs::write(
+        dir.path().join("sub/inner/b.md"),
+        "[nested][r]\n\n[r]: other.pdf\n",
+    )?;
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .current_dir(dir.path())
+        .args(["process", "-i", "post.md", "--action", "embed-markdown"])
+        .args(["--action", "append-reference-list"])
+        .output_ok()?;
+    let actual = String::from_utf8(result.stdout)?;
+    let embedded = "[same](shared.pdf) [child](sub/child.pdf)\n\n\
+                    [nested](sub/inner/other.pdf)\n\n";
+    let expected = format!(
+        "[parent](shared.pdf)\n\n{embedded}{embedded}Reference:\n\n\
+         - R : [shared.pdf](shared.pdf)\n\n- R-2 : [sub/child.pdf](sub/child.pdf)\n\n\
+         - r-3 : [sub/inner/other.pdf](sub/inner/other.pdf)\n"
+    );
+    assert_eq!(actual, expected);
+    dir.close()
+}
+
 /// A file embedded in a block quote, and a file that it embeds, keep what each holds: links by
 /// their own definitions, their front matter and `--refs`; formulas that blank lines split; and
 /// image URLs, rebased to the input file's directory. The reference list at the end takes the
