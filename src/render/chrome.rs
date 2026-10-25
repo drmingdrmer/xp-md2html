@@ -26,10 +26,7 @@ const MAX_DEVICE_PIXELS: u64 = i32::MAX as u64;
 
 /// The context of the error when Chrome is missing.
 const CHROME_HELP: &str =
-    "Failed to render content. Make sure Chrome/Chromium is installed and accessible.\n\
-    Chrome: On macOS: Install from https://www.google.com/chrome/\n\
-    Chrome: On Linux: sudo apt install chromium-browser (Ubuntu/Debian) or equivalent\n\
-    Chrome: On Windows: Install from https://www.google.com/chrome/";
+    "Failed to render content. Make sure Chrome/Chromium is installed and accessible.";
 
 /// The environment variable that names Chrome, as a path or a command in `PATH`, instead of the
 /// lookup.
@@ -49,10 +46,7 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(60);
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 /// The context of the error when ImageMagick is missing, which only a PNG or a JPEG needs.
-const MAGICK_HELP: &str = "Failed to trim the image. Make sure ImageMagick is installed and accessible; an SVG or a PDF does not need it.\n\
-    ImageMagick: On macOS: brew install imagemagick\n\
-    ImageMagick: On Linux: sudo apt install imagemagick\n\
-    ImageMagick: On Windows: Install from https://imagemagick.org/";
+const MAGICK_HELP: &str = "Failed to trim the image. Make sure ImageMagick is installed and accessible; an SVG or a PDF does not need it.";
 
 /// The format of the file that a render makes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

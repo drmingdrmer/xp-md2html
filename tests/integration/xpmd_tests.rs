@@ -193,11 +193,15 @@ fn test_render_png_without_imagemagick() -> Result<()> {
     assert!(!succeeded);
 
     let stderr = String::from_utf8(result.stderr)?;
-    let first_line = stderr.lines().next();
-    let expected_first_line =
+    let expected = format!(
         "Error: Failed to trim the image. Make sure ImageMagick is installed \
-                               and accessible; an SVG or a PDF does not need it.";
-    assert_eq!(first_line, Some(expected_first_line));
+         and accessible; an SVG or a PDF does not need it.: \
+         XPMD_MAGICK names no command: {0}: \
+         No available command found in PATH: [{1:?}]\n",
+        no_magick.display(),
+        no_magick
+    );
+    assert_eq!(stderr, expected);
     dir.close()
 }
 
@@ -220,10 +224,16 @@ fn test_render_without_chrome() -> Result<()> {
     assert!(!succeeded);
 
     let stderr = String::from_utf8(result.stderr)?;
-    let first_line = stderr.lines().next();
-    let expected_first_line =
-        "Error: Failed to render content. Make sure Chrome/Chromium is installed and accessible.";
-    assert_eq!(first_line, Some(expected_first_line));
+    let missing = dir.path().join("no-chrome");
+    let expected = format!(
+        "Error: Failed to render content. \
+         Make sure Chrome/Chromium is installed and accessible.: \
+         XPMD_CHROME names no command: {0}: \
+         No available command found in PATH: [{1:?}]\n",
+        missing.display(),
+        missing
+    );
+    assert_eq!(stderr, expected);
     dir.close()
 }
 
@@ -261,9 +271,11 @@ fn test_render_kills_hanging_chrome() -> Result<()> {
     assert!(!succeeded);
 
     let stderr = String::from_utf8(result.stderr)?;
-    let last_line = stderr.lines().last();
-    let expected_last_line = "    Killed it after 1s; XPMD_TIMEOUT sets the limit in seconds";
-    assert_eq!(last_line, Some(expected_last_line));
+    let lines: Vec<_> = stderr.lines().collect();
+    assert_eq!(lines, vec![stderr.trim_end()]);
+    let expected_end = ": Killed it after 1s; XPMD_TIMEOUT sets the limit in seconds\n";
+    let has_limit = stderr.ends_with(expected_end);
+    assert!(has_limit, "{stderr}");
     dir.close()
 }
 
@@ -323,8 +335,8 @@ fn test_output_ok_fails() -> Result<()> {
     let message = result.unwrap_err().to_string();
     let expected = format!(
         "{command:?} failed with exit status: 1; stderr:\n\
-         Error: Failed to read input file: /nonexistent/post.md\n\n\
-         Caused by:\n    No such file or directory (os error 2)\n"
+         Error: Failed to read input file: /nonexistent/post.md: \
+         No such file or directory (os error 2)\n"
     );
     assert_eq!(message, expected);
     Ok(())

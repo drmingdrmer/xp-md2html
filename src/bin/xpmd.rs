@@ -5,6 +5,7 @@ use std::io::Read;
 use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::ExitCode;
 
 use anyhow::Context;
 use anyhow::Result;
@@ -293,14 +294,25 @@ struct RenderMarkdownArgs {
 const MATH_WINDOW_WIDTH: u32 = 1000;
 const MATH_WINDOW_HEIGHT: u32 = 2000;
 
-fn main() -> Result<()> {
-    let result = run();
-    if let Err(error) = &result {
-        if let Some(error) = error.downcast_ref::<clap::Error>() {
-            error.exit();
-        }
+fn main() -> ExitCode {
+    let Err(error) = run() else {
+        return ExitCode::SUCCESS;
+    };
+    if let Some(error) = error.downcast_ref::<clap::Error>() {
+        error.exit();
     }
-    result
+    let message = error_message(&error);
+    eprintln!("Error: {message}");
+    ExitCode::FAILURE
+}
+
+/// Keep every cause while making multiline tool and parser diagnostics one terminal line.
+fn error_message(error: &anyhow::Error) -> String {
+    let message = format!("{error:#}");
+    let lines = message.lines().map(str::trim);
+    let nonempty = lines.filter(|line| !line.is_empty());
+    let parts: Vec<_> = nonempty.collect();
+    parts.join(" ")
 }
 
 fn run() -> Result<()> {
@@ -634,7 +646,9 @@ fn process_command(args: ProcessArgs) -> Result<()> {
     };
     let assets_dir = assets.unwrap_or_else(|| output_dir.clone());
     let platform = preset.map(Preset::name);
-    let refs = Refs::load(&ref_files, &markdown, platform)?;
+    let source = input.as_deref().unwrap_or_else(|| Path::new("<stdin>"));
+    let refs = Refs::load(&ref_files, &markdown, platform)
+        .with_context(|| format!("Failed to load references for {}", source.display()))?;
 
     // A link behind the URL base cannot leave the output file's directory with `..`.
     if url_base.is_some() {
@@ -708,13 +722,12 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         }
     }
 
-    let source = input.as_deref().unwrap_or_else(|| Path::new("<stdin>"));
     let processed =
         xp_md2html::process::process_markdown_from(&markdown, &all_actions, &ctx, source)?;
     write_output(output.as_deref(), processed.as_bytes())?;
 
     if let Some(output) = output {
-        println!("✅ Successfully wrote: {}", output.display());
+        eprintln!("✅ Successfully wrote: {}", output.display());
     }
 
     Ok(())
@@ -816,6 +829,17 @@ fn resolve_format(format: Option<&str>, output: Option<&Path>) -> Result<OutputF
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_error_message() {
+        let cause = anyhow::anyhow!("first line\n  second line\n\nlast line");
+        let error = cause.context("Failed to read two  spaces.md");
+        let message = error_message(&error);
+        assert_eq!(
+            message,
+            "Failed to read two  spaces.md: first line second line last line"
+        );
+    }
 
     #[test]
     fn test_resolve_format_from_extension() -> Result<()> {

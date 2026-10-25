@@ -53,10 +53,11 @@ fn test_process_table_to_image() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let stdout = String::from_utf8(result.stdout)?;
-    let expected_stdout = format!("✅ Successfully wrote: {}\n", output.display());
+    let expected_stdout = "";
     assert_eq!(stdout, expected_stdout);
 
     let markdown = fs::read_to_string(&output)?;
@@ -97,7 +98,8 @@ fn test_process_table_to_image_input_images() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(markdown, "![](post-table-d295bbb3e858.png)\n");
@@ -145,7 +147,8 @@ fn test_process_table_to_image_copied_image() -> Result<()> {
             .output_ok()?;
 
         let stderr = String::from_utf8(result.stderr)?;
-        assert_eq!(stderr, "");
+        let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+        assert_eq!(stderr, expected_status);
 
         let markdown = fs::read_to_string(&output)?;
         let expected_markdown = format!("![]({link_start}{png_name})\n");
@@ -183,7 +186,8 @@ fn test_process_table_to_image_output_collision() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(markdown, "![](post-table-4d9d4f8cfc27.png)\n");
@@ -217,7 +221,8 @@ fn test_process_table_to_image_url_escapes() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(markdown, "![](post-table-057b5e00a0eb.png)\n");
@@ -259,7 +264,8 @@ fn test_process_mermaid_to_image() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let expected_markdown = "# Flow\n\n\
@@ -293,7 +299,8 @@ fn test_process_graphviz_to_image() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let expected_markdown = "# Graph\n\n\
@@ -334,7 +341,8 @@ fn test_process_code_to_image() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let expected_markdown = "# Code\n\n\
@@ -449,7 +457,8 @@ fn test_process_math_to_image() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let expected_markdown = "# Math\n\n\
@@ -491,7 +500,8 @@ fn test_process_math_to_image_wide() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(markdown, "![](post-math-eb057363ada7.png)\n");
@@ -524,7 +534,8 @@ fn test_process_math_to_image_service() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let expected_markdown = "# Math\n\n\
@@ -560,7 +571,8 @@ fn test_process_math_to_img_tag() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let expected_markdown = concat!(
@@ -593,7 +605,8 @@ fn test_process_drop_front_matter() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(markdown, "# Title\n");
@@ -619,7 +632,8 @@ fn test_process_append_reference_list() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let expected_markdown = "See [the post](http://p.com \"Post\") and [c](http://c.com).\n\n\
@@ -653,7 +667,8 @@ fn test_process_rewrite_reference_list() -> Result<()> {
             .output_ok()?;
 
         let stderr = String::from_utf8(result.stderr)?;
-        assert_eq!(stderr, "");
+        let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+        assert_eq!(stderr, expected_status);
 
         let markdown = fs::read_to_string(&output)?;
         let expected_markdown = "See [p](https://new.com/p \"P\").\n\n\
@@ -720,7 +735,8 @@ fn test_process_math_block_to_one_line() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(markdown, "- Sum $$a + b$$\n");
@@ -745,7 +761,8 @@ fn test_process_join_math_block() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(markdown, "- $$a\\,b_{i} *c* d$$\n");
@@ -775,7 +792,8 @@ fn test_process_embed_join_math_block() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let expected_markdown = "$$\na\nb\n$$\n\n$$\nc\nd\n$$\n\n$$\ne\nf\n$$\n";
@@ -807,7 +825,8 @@ fn test_process_zhihu_formula_lines() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let expected_markdown = concat!(
@@ -844,7 +863,8 @@ fn test_process_formula_line_indent() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let expected_markdown = "$$\na\n    =\nb\n$$\n\n\
@@ -878,7 +898,8 @@ fn test_process_math_inline_to_text() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(markdown, "Let x² ∈ ℝ.\n");
@@ -937,7 +958,8 @@ fn test_process_codespan_to_text() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(markdown, "Run a \\<b\\> now.\n");
@@ -961,7 +983,8 @@ fn test_process_escaped_dollar() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(markdown, "Price \\$a\\$ and \\$x\\$.\n");
@@ -989,7 +1012,8 @@ fn test_process_bracket() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let expected_markdown =
@@ -1014,7 +1038,8 @@ fn test_process_flatten_lists() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(markdown, "a\n\nb\n\nc\n");
@@ -1041,7 +1066,8 @@ fn test_process_rewrite_urls() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let expected = "![a](https://cdn.com/x.png) [b](https://blog.com/y/)\n";
@@ -1065,7 +1091,8 @@ fn test_process_table_to_html() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let expected_markdown = "# Tables\n\n\
@@ -1118,7 +1145,8 @@ fn test_process_embed() -> Result<()> {
             .output_ok()?;
 
         let stderr = String::from_utf8(result.stderr)?;
-        assert_eq!(stderr, "");
+        let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+        assert_eq!(stderr, expected_status);
 
         let markdown = fs::read_to_string(&output)?;
         assert_eq!(markdown, expected_markdown);
@@ -1149,7 +1177,8 @@ fn test_process_image_to_asset() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(
@@ -1202,7 +1231,8 @@ fn test_process_image_to_asset_keeps_assets() -> Result<()> {
             .output_ok()?;
 
         let stderr = String::from_utf8(result.stderr)?;
-        assert_eq!(stderr, "");
+        let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+        assert_eq!(stderr, expected_status);
 
         let markdown = fs::read_to_string(&output)?;
         assert_eq!(markdown, expected_markdown);
@@ -1254,7 +1284,8 @@ fn test_process_image_to_asset_url_escapes() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let base = "https://cdn.invalid/out/assets%231/aa5290abd426";
@@ -1308,7 +1339,8 @@ fn test_process_md2zhihu_image_names() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(markdown, "![a](4c699dfa744f4737-my-pic.png)\n");
@@ -1357,7 +1389,8 @@ fn test_process_link_to_asset() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let base = "/post-res/post";
@@ -1417,7 +1450,8 @@ fn test_process_url_base() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let expected = "![a](https://cdn.com/gh/u/r@b/out/assets/e793c41f42c3-a.png)\n";
@@ -1484,7 +1518,8 @@ fn test_process_url_base_download_images() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let expected = "![a](https://cdn.invalid/out/e793c41f42c3-a.png)\n";
@@ -1515,7 +1550,8 @@ fn test_process_download_images_under_url_base() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let request_line = server.join().unwrap()?;
     assert_eq!(request_line, "GET /out/a.png HTTP/1.1");
@@ -1604,7 +1640,8 @@ fn test_process_preset() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let expected_markdown = "![a](e793c41f42c3-a.png)\n\n\
@@ -1633,7 +1670,8 @@ fn test_process_preset_keep_front_matter() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     assert_eq!(markdown, "---\ntitle: T\n---\n\n# Title\n");
@@ -1660,7 +1698,8 @@ fn test_process_preset_hugo() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let expected_markdown = "\\[E = mc^2\\]\n\nThe cost $$O(n \\log n)$$ is low.\n";
@@ -1698,7 +1737,8 @@ fn test_process_refs() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let expected_markdown = "See [grpc](https://z.com/grpc), [pb](https://pb.com \"protobuf\") \
@@ -1785,7 +1825,8 @@ fn test_process_embed_refs() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let expected_markdown = "[doc](https://example.invalid/doc), [a](https://a.invalid/post) \
@@ -1855,20 +1896,23 @@ fn test_process_missing_asset_source() -> Result<()> {
         assert_eq!(status, Some(1));
         assert_eq!(result.stdout, b"");
         let stderr = String::from_utf8(result.stderr)?;
-        let first_line = stderr.lines().next();
         let missing = dir.path().join("sub").join(name);
         let expected = if name.ends_with(".md") {
             format!(
-                "Error: Failed to read embedded markdown: {} (used in {})",
+                "Error: Failed to read embedded markdown: {} (used in {}): \
+                 No such file or directory (os error 2)\n",
                 missing.display(),
                 child.display()
             )
         } else {
-            format!("Error: Used in {}", child.display())
+            format!(
+                "Error: Used in {}: Failed to read image: {}: \
+                 No such file or directory (os error 2)\n",
+                child.display(),
+                missing.display()
+            )
         };
-        assert_eq!(first_line, Some(expected.as_str()));
-        let mentions_asset = stderr.contains(&missing.display().to_string());
-        assert!(mentions_asset, "{stderr}");
+        assert_eq!(stderr, expected);
     }
     dir.close()
 }
@@ -1901,7 +1945,8 @@ fn test_process_embed_reference_list() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let expected_markdown = "See [used](https://example.invalid/spec) and \
@@ -1989,7 +2034,8 @@ fn test_process_embed_nested() -> Result<()> {
         .output_ok()?;
 
     let stderr = String::from_utf8(result.stderr)?;
-    assert_eq!(stderr, "");
+    let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+    assert_eq!(stderr, expected_status);
 
     let markdown = fs::read_to_string(&output)?;
     let expected_markdown = "# Post\n\n\
@@ -2045,6 +2091,78 @@ fn test_process_fenced_plain_code() -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[test]
+fn test_process_yaml_error_sources() -> Result<()> {
+    let dir = TestDir::new()?;
+    fs::write(dir.path().join("bad.md"), "---\nrefs: [\n---\n")?;
+    fs::write(dir.path().join("parent.md"), "![](bad.md)\n")?;
+    fs::write(dir.path().join("refs.yaml"), "universal: [\n")?;
+    let cases = [
+        (
+            vec!["-i", "bad.md"],
+            "Failed to load references for bad.md: Failed to parse the front matter as YAML",
+            "bad.md",
+        ),
+        (
+            vec!["-i", "parent.md", "--action", "embed-markdown"],
+            "Failed to load the refs of:",
+            "bad.md",
+        ),
+        (
+            vec!["-i", "parent.md", "--refs", "refs.yaml"],
+            "Failed to parse refs file",
+            "refs.yaml",
+        ),
+    ];
+    for (args, expected, source) in cases {
+        let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+            .current_dir(dir.path())
+            .arg("process")
+            .args(args)
+            .env("RUST_BACKTRACE", "full")
+            .output_bounded()?;
+        assert_eq!(result.status.code(), Some(1));
+        assert_eq!(result.stdout, b"");
+        let stderr = String::from_utf8(result.stderr)?;
+        let lines: Vec<_> = stderr.lines().collect();
+        assert_eq!(lines, vec![stderr.trim_end()]);
+        let has_source = stderr.contains(source);
+        assert!(has_source, "{stderr}");
+        let has_context = stderr.contains(expected);
+        assert!(has_context, "{stderr}");
+        let has_cause = stderr.contains("while parsing a node, did not find expected node content");
+        assert!(has_cause, "{stderr}");
+    }
+    dir.close()
+}
+
+#[test]
+fn test_process_download_error() -> Result<()> {
+    let dir = TestDir::new()?;
+    let input = dir.path().join("post.md");
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    let port = listener.local_addr()?.port();
+    drop(listener);
+    let url = format!("http://127.0.0.1:{port}/image.png");
+    fs::write(&input, format!("![]({url})\n"))?;
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .current_dir(dir.path())
+        .args(["process", "--action", "download-images", "-i"])
+        .arg(&input)
+        .output_bounded()?;
+    assert_eq!(result.status.code(), Some(1));
+    assert_eq!(result.stdout, b"");
+    let stderr = String::from_utf8(result.stderr)?;
+    let lines: Vec<_> = stderr.lines().collect();
+    assert_eq!(lines, vec![stderr.trim_end()]);
+    let expected = format!("Error: Failed to download: {url}: ");
+    let has_context = stderr.starts_with(&expected);
+    assert!(has_context, "{stderr}");
+    let has_cause = stderr.contains("Connection refused");
+    assert!(has_cause, "{stderr}");
+    dir.close()
 }
 
 #[test]
@@ -2234,7 +2352,8 @@ fn test_process_without_renderer() -> Result<()> {
             .output_ok()?;
 
         let stderr = String::from_utf8(result.stderr)?;
-        assert_eq!(stderr, "");
+        let expected_status = format!("✅ Successfully wrote: {}\n", output.display());
+        assert_eq!(stderr, expected_status);
 
         let markdown = fs::read_to_string(&output)?;
         assert_eq!(markdown, expected_markdown);
@@ -2266,9 +2385,11 @@ fn test_process_renderer_missing() -> Result<()> {
     assert!(!succeeded);
 
     let stderr = String::from_utf8(result.stderr)?;
-    let first_line = stderr.lines().next();
     let expected_first_line = "Error: Failed to render content. \
                                Make sure Chrome/Chromium is installed and accessible.";
-    assert_eq!(first_line, Some(expected_first_line));
+    let matches = stderr.starts_with(expected_first_line);
+    assert!(matches, "{stderr}");
+    let lines: Vec<_> = stderr.lines().collect();
+    assert_eq!(lines, vec![stderr.trim_end()]);
     dir.close()
 }

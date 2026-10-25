@@ -42,9 +42,7 @@ fn test_invalid_tex() -> Result<()> {
             assert_eq!(status, Some(1));
             assert_eq!(result.stdout, b"");
             let stderr = String::from_utf8(result.stderr)?;
-            let expected = format!(
-                "Error: Failed to render formula: {tex}\n\nCaused by:\n    MathJax: {message}\n"
-            );
+            let expected = format!("Error: Failed to render formula: {tex}: MathJax: {message}\n");
             assert_eq!(stderr, expected);
         }
     }
