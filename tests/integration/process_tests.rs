@@ -1964,7 +1964,7 @@ fn test_process_embed_reference_collisions() -> Result<()> {
     fs::create_dir_all(dir.path().join("sub/inner"))?;
     fs::write(
         dir.path().join("post.md"),
-        "[parent][R]\n\n![](sub/a.md)\n\n![](sub/a.md)\n\n[R]: shared.pdf\n",
+        "[parent][R]\n\n![](sub/a.md)\n\n![](sub/a.md)\n\n[R]: ./shared.pdf\n",
     )?;
     fs::write(
         dir.path().join("sub/a.md"),
@@ -1984,8 +1984,8 @@ fn test_process_embed_reference_collisions() -> Result<()> {
     let embedded = "[same](shared.pdf) [child](sub/child.pdf)\n\n\
                     [nested](sub/inner/other.pdf)\n\n";
     let expected = format!(
-        "[parent](shared.pdf)\n\n{embedded}{embedded}Reference:\n\n\
-         - R : [shared.pdf](shared.pdf)\n\n- R-2 : [sub/child.pdf](sub/child.pdf)\n\n\
+        "[parent](./shared.pdf)\n\n{embedded}{embedded}Reference:\n\n\
+         - R : [./shared.pdf](./shared.pdf)\n\n- R-2 : [sub/child.pdf](sub/child.pdf)\n\n\
          - r-3 : [sub/inner/other.pdf](sub/inner/other.pdf)\n"
     );
     assert_eq!(actual, expected);

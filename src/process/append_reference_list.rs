@@ -132,7 +132,8 @@ fn used_references(loader: &Loader<'_>) -> Vec<Reference> {
                 break;
             };
             let registered = &references[index];
-            if registered.url == reference.url && registered.title == reference.title {
+            let same_url = destination_key(&registered.url) == destination_key(&reference.url);
+            if same_url && registered.title == reference.title {
                 continue 'links;
             }
             suffix += 1;
@@ -143,10 +144,51 @@ fn used_references(loader: &Loader<'_>) -> Vec<Reference> {
     references
 }
 
+/// Compare local paths after rebasing, without changing the spelling of output links.
+fn destination_key(url: &str) -> (bool, String, String) {
+    let local = super::embed_markdown::is_relative(url) || super::embed_markdown::is_root_path(url);
+    if !local {
+        return (false, url.to_string(), String::new());
+    }
+    let path = super::url_path(url);
+    let mut parts = Vec::new();
+    for part in path.split('/') {
+        match part {
+            "" | "." => {}
+            ".." if parts.last().is_some_and(|last| *last != "..") => {
+                parts.pop();
+            }
+            _ => parts.push(part),
+        }
+    }
+    let (_, suffix) = super::split_suffix(url);
+    (true, parts.join("/"), suffix.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::process::refs::Refs;
+
+    #[test]
+    fn test_reference_destination_keys() {
+        let cases = [
+            ("./shared.pdf", "sub/../shared.pdf", true),
+            ("/shared.pdf", "shared.pdf", true),
+            ("../shared.pdf", "../../shared.pdf", false),
+            ("file%20name.pdf?q#f", "./file name.pdf?q#f", true),
+            ("file%3Fname", "file?name", false),
+            ("file.pdf?q=1", "file.pdf?q=2", false),
+            ("file.pdf#one", "file.pdf#two", false),
+            ("https://a.test/x", "https://b.test/x", false),
+        ];
+        for (first, second, expected) in cases {
+            let first_key = destination_key(first);
+            let second_key = destination_key(second);
+            let same = first_key == second_key;
+            assert_eq!(same, expected, "{first}, {second}");
+        }
+    }
 
     #[test]
     fn test_normalized_reference_names() -> anyhow::Result<()> {
