@@ -3,6 +3,7 @@
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use anyhow::Context;
 use comrak::nodes::NodeValue;
@@ -12,15 +13,18 @@ use super::ActionContext;
 
 /// The largest response body a download accepts; `ureq` stops reading at this size.
 const MAX_IMAGE_BYTES: u64 = 100 * 1024 * 1024;
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Download every `http(s)://` image under `root` into `ctx.assets_dir` and link the copy; the link
 /// to an asset, such as a copy under `ctx.url_base` that is not online yet, keeps its URL.
 pub fn apply(root: Node<'_>, ctx: &ActionContext) -> anyhow::Result<()> {
+    let agent = download_agent(DOWNLOAD_TIMEOUT);
     relink_remote_images(root, |url| {
         if ctx.is_asset(url) {
             return Ok(url.to_string());
         }
-        let path = download(url, &ctx.assets_dir)?;
+        let path = download(&agent, url, &ctx.assets_dir)?;
         ctx.link_to(&path)
     })
 }
@@ -52,10 +56,10 @@ fn is_remote(url: &str) -> bool {
 /// Download `url` into `assets_dir`, unless its file is already there, and return the file's path.
 ///
 /// The file name hashes the URL, not the content, so a second run skips the download.
-fn download(url: &str, assets_dir: &Path) -> anyhow::Result<PathBuf> {
+fn download(agent: &ureq::Agent, url: &str, assets_dir: &Path) -> anyhow::Result<PathBuf> {
     let path = assets_dir.join(file_name(url));
     if !path.exists() {
-        let body = fetch(url)?;
+        let body = fetch(agent, url)?;
         fs::write(&path, body)
             .with_context(|| format!("Failed to write image: {}", path.display()))?;
     }
@@ -76,8 +80,9 @@ fn file_name(url: &str) -> String {
 }
 
 /// Return the body that `GET url` answers with; a status outside 2xx is an error.
-fn fetch(url: &str) -> anyhow::Result<Vec<u8>> {
-    let mut response = ureq::get(url)
+fn fetch(agent: &ureq::Agent, url: &str) -> anyhow::Result<Vec<u8>> {
+    let mut response = agent
+        .get(url)
         .call()
         .with_context(|| format!("Failed to download: {url}"))?;
     let body = response
@@ -87,6 +92,19 @@ fn fetch(url: &str) -> anyhow::Result<Vec<u8>> {
         .read_to_vec()
         .with_context(|| format!("Failed to read the download: {url}"))?;
     Ok(body)
+}
+
+/// Bound DNS, connection and response reads, including redirects and the complete response body.
+fn download_agent(timeout: Duration) -> ureq::Agent {
+    let connect = CONNECT_TIMEOUT.min(timeout);
+    let config = ureq::Agent::config_builder();
+    let config = config.timeout_global(Some(timeout));
+    let config = config.timeout_resolve(Some(connect));
+    let config = config.timeout_connect(Some(connect));
+    let config = config.timeout_recv_response(Some(timeout));
+    let config = config.timeout_recv_body(Some(timeout));
+    let config = config.build();
+    config.into()
 }
 
 #[cfg(test)]
@@ -228,7 +246,8 @@ mod tests {
         let url = format!("http://127.0.0.1:{port}/img/a.png?x=1");
         let name = file_name(&url);
 
-        let result = download(&url, &assets_dir);
+        let agent = download_agent(DOWNLOAD_TIMEOUT);
+        let result = download(&agent, &url, &assets_dir);
         let request_line = server.join().unwrap()?;
         assert_eq!(request_line, "GET /img/a.png?x=1 HTTP/1.1");
         let path = result?;
@@ -237,7 +256,7 @@ mod tests {
         assert_eq!(content, b"PNGDATA");
 
         // The server is gone, so this call succeeds only if it skips the download.
-        let path = download(&url, &assets_dir)?;
+        let path = download(&agent, &url, &assets_dir)?;
         assert_eq!(path, assets_dir.join(&name));
         Ok(())
     }
@@ -249,7 +268,8 @@ mod tests {
         let (port, server) = serve_once("HTTP/1.1 404 Not Found", b"")?;
         let url = format!("http://127.0.0.1:{port}/missing.png");
 
-        let result = download(&url, dir.path());
+        let agent = download_agent(DOWNLOAD_TIMEOUT);
+        let result = download(&agent, &url, dir.path());
         let request_line = server.join().unwrap()?;
         assert_eq!(request_line, "GET /missing.png HTTP/1.1");
         let message = format!("{:#}", result.unwrap_err());
@@ -258,6 +278,56 @@ mod tests {
             format!("Failed to download: {url}: http status: 404")
         );
         assert!(!dir.path().join(file_name(&url)).exists());
+        Ok(())
+    }
+
+    /// A server that stalls before headers or halfway through the body leaves no partial asset.
+    #[test]
+    fn test_download_stalled_response() -> anyhow::Result<()> {
+        for headers in [false, true] {
+            let dir = tempfile::tempdir()?;
+            let listener = TcpListener::bind("127.0.0.1:0")?;
+            let address = listener.local_addr()?;
+            let (stop, stopped) = std::sync::mpsc::channel();
+            let server = thread::spawn(move || -> anyhow::Result<()> {
+                let (mut stream, _) = listener.accept()?;
+                if headers {
+                    stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 6\r\n\r\nPNG")?;
+                }
+                stopped.recv_timeout(SERVER_WAIT)?;
+                Ok(())
+            });
+            let url = format!("http://{address}/stalled.png");
+            let agent = download_agent(Duration::from_millis(250));
+            let start = Instant::now();
+            let result = download(&agent, &url, dir.path());
+            let elapsed = start.elapsed();
+            stop.send(())?;
+            server.join().unwrap()?;
+
+            let error = result.unwrap_err();
+            let timeout = matches!(
+                error.downcast_ref::<ureq::Error>(),
+                Some(ureq::Error::Timeout(_))
+            );
+            assert!(timeout, "{error:#}");
+            let message = error.to_string();
+            let expected = if headers {
+                format!("Failed to read the download: {url}")
+            } else {
+                format!("Failed to download: {url}")
+            };
+            assert_eq!(message, expected);
+            let maximum = Duration::from_secs(2);
+            assert!(elapsed < maximum, "{elapsed:?}");
+            let mut files = Vec::new();
+            for entry in fs::read_dir(dir.path())? {
+                let entry = entry?;
+                files.push(entry.file_name());
+            }
+            assert_eq!(files, Vec::<std::ffi::OsString>::new());
+            dir.close()?;
+        }
         Ok(())
     }
 }
