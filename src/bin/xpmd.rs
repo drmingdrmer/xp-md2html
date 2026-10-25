@@ -107,6 +107,10 @@ struct RenderArgs {
 /// The options of the `process` subcommand.
 #[derive(Args)]
 struct ProcessArgs {
+    /// Link bare URLs and email addresses [default: false for hugo/minimal_mistake, true otherwise]
+    #[arg(long, value_name = "BOOL")]
+    autolink: Option<bool>,
+
     /// Input markdown file [default: stdin, with the current directory as its directory]
     #[arg(short, long)]
     input: Option<PathBuf>,
@@ -612,6 +616,7 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         })?;
     }
     let ProcessArgs {
+        autolink,
         input,
         output,
         assets,
@@ -679,7 +684,12 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         asset_base: None,
     };
     let renderer = LazyRenderer::new(config);
+    let preset_autolink = match preset {
+        Some(preset) => preset.autolink(),
+        None => true,
+    };
     let ctx = ActionContext {
+        autolink: autolink.unwrap_or(preset_autolink),
         input_dir,
         assets_dir,
         output_dir,

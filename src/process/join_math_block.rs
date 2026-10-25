@@ -42,9 +42,14 @@ enum LineEdit {
 /// more formula, and a joined line changes how comrak reads the lines after it, so the next pass
 /// parses again.
 pub fn join(markdown: &str) -> String {
+    let options = gfm_math_options();
+    join_with_options(markdown, &options)
+}
+
+pub(super) fn join_with_options(markdown: &str, options: &comrak::Options) -> String {
     let mut text = markdown.to_string();
     loop {
-        let joined = join_once(&text);
+        let joined = join_once(&text, options);
         if joined == text {
             return text;
         }
@@ -54,9 +59,9 @@ pub fn join(markdown: &str) -> String {
 
 /// `markdown` without the blank lines between each paragraph that opens a formula and the paragraph
 /// that closes it, and with the [`split_edit`] of each formula that a `$$` alone on a line opens.
-fn join_once(markdown: &str) -> String {
+fn join_once(markdown: &str, options: &comrak::Options) -> String {
     let arena = Arena::new();
-    let mut options = gfm_math_options();
+    let mut options = options.clone();
     // An escaped `\$` stays out of the text nodes, so a `$$` in a text node is unescaped.
     options.parse.escaped_char_spans = true;
     let root = comrak::parse_document(&arena, markdown, &options);

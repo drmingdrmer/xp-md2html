@@ -52,6 +52,12 @@ impl FromStr for Preset {
 }
 
 impl Preset {
+    /// Whether this platform links bare URLs by default; website themes keep them as text.
+    pub fn autolink(self) -> bool {
+        let website = self == Self::Hugo || self == Self::MinimalMistake;
+        !website
+    }
+
     /// The name of the platform, as `--preset` and md2zhihu's `--platform` write it.
     pub fn name(self) -> &'static str {
         match self {

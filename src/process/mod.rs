@@ -52,6 +52,8 @@ use crate::render::math_img::SERVICE_NAMES;
 
 /// What an action reads and writes besides the tree.
 pub struct ActionContext {
+    /// Whether bare URLs and email addresses become links; explicit angle links always work.
+    pub autolink: bool,
     /// The directory of the input file; a path in the markdown resolves against it, also `/x`.
     pub input_dir: PathBuf,
     /// The directory that receives the files the actions create.
@@ -387,6 +389,8 @@ pub fn gfm_math_options() -> Options<'static> {
 /// Parses the input file and each file that it embeds into a tree in one arena, and keeps each link
 /// that a reference made, for `append-reference-list`.
 pub struct Loader<'a> {
+    /// The syntax shared by all parses of this document and its embeds.
+    options: Options<'static>,
     /// The arena that owns the trees.
     arena: &'a Arena<'a>,
     /// Whether to join a `$$` formula that blank lines split before the parse, for
@@ -405,7 +409,15 @@ impl<'a> Loader<'a> {
     /// A loader that parses into `arena`, and joins split `$$` formulas when `actions` holds
     /// `join-math-block`.
     pub fn new(arena: &'a Arena<'a>, actions: &[Action]) -> Self {
+        Self::with_autolink(arena, actions, true)
+    }
+
+    /// A loader with an explicit policy for linking bare URLs and email addresses.
+    pub fn with_autolink(arena: &'a Arena<'a>, actions: &[Action], autolink: bool) -> Self {
+        let mut options = gfm_math_options();
+        options.extension.autolink = autolink;
         Self {
+            options,
             arena,
             joins: actions.contains(&Action::JoinMathBlock),
             references: RefCell::default(),
@@ -428,12 +440,17 @@ impl<'a> Loader<'a> {
         source: &Path,
     ) -> anyhow::Result<Node<'a>> {
         let markdown = if self.joins {
-            join_math_block::join(markdown)
+            join_math_block::join_with_options(markdown, &self.options)
         } else {
             markdown.to_string()
         };
-        let prepared = math_syntax::prepare(&markdown)?;
-        let parsed = refs.parse(self.arena, &prepared.markdown, Some(&markdown))?;
+        let prepared = math_syntax::prepare(&markdown, &self.options)?;
+        let parsed = refs.parse(
+            self.arena,
+            &prepared.markdown,
+            Some(&markdown),
+            &self.options,
+        )?;
         prepared.restore(parsed.root);
         self.record_source(parsed.root, source);
         for reference in parsed.undefined {
@@ -523,10 +540,8 @@ pub fn process_markdown_from(
     ctx: &ActionContext,
     source: &Path,
 ) -> anyhow::Result<String> {
-    let mut options = gfm_math_options();
-    options.render.prefer_fenced = true;
     let arena = Arena::new();
-    let loader = Loader::new(&arena, actions);
+    let loader = Loader::with_autolink(&arena, actions, ctx.autolink);
     let root = loader.load_from(markdown, &ctx.refs, source)?;
 
     for action in actions {
@@ -538,11 +553,13 @@ pub fn process_markdown_from(
     escape_link_destinations(root)?;
 
     let mut out = String::new();
+    let mut options = loader.options.clone();
+    options.render.prefer_fenced = true;
     comrak::format_commonmark(root, &options, &mut out)?;
     // comrak prints the TeX of a formula as it is, so a line of it such as `=` would split the
     // formula wherever a reader lacks md2zhihu's `$$` rule, such as on github.com; `join` indents
     // such a line, as md2zhihu prints it.
-    let out = join_math_block::join(&out);
+    let out = join_math_block::join_with_options(&out, &options);
     Ok(out)
 }
 
@@ -977,6 +994,7 @@ mod tests {
             asset_base: None,
         };
         let ctx = ActionContext {
+            autolink: true,
             input_dir: dir.path().to_path_buf(),
             assets_dir: dir.path().to_path_buf(),
             output_dir: dir.path().to_path_buf(),

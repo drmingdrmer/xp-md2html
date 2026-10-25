@@ -2224,6 +2224,60 @@ fn test_process_in_place() -> Result<()> {
     dir.close()
 }
 
+#[test]
+fn test_process_autolink() -> Result<()> {
+    let input = b"https://bare.test www.bare.test mail@bare.test <https://angle.test>\n";
+    let plain = "https://bare.test www.bare.test mail@bare.test <https://angle.test>\n";
+    let linked = "<https://bare.test> [www.bare.test](http://www.bare.test) \
+                  <mail@bare.test> <https://angle.test>\n";
+    let cases = [
+        (vec![], linked),
+        (vec!["--autolink", "false"], plain),
+        (vec!["--preset", "hugo"], plain),
+        (vec!["--preset", "minimal_mistake"], plain),
+        (vec!["--preset", "github"], linked),
+        (vec!["--preset", "hugo", "--autolink", "true"], linked),
+    ];
+    for (args, expected) in cases {
+        let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+            .arg("process")
+            .args(args)
+            .output_ok_with_stdin(input)?;
+        let actual = String::from_utf8(result.stdout)?;
+        assert_eq!(actual, expected);
+    }
+    Ok(())
+}
+
+#[test]
+fn test_process_autolink_embeds_and_references() -> Result<()> {
+    let dir = TestDir::new()?;
+    let input = "[x][https://label.test] https://bare.test/[a][missing]\n\n\
+        <https://explicit.test/$secret$>\n\n![](child.md)\n";
+    fs::write(dir.path().join("post.md"), input)?;
+    fs::write(dir.path().join("child.md"), "https://child.test/$x$\n")?;
+    let refs = "universal:\n  https://label.test: https://destination.test\n";
+    fs::write(dir.path().join("refs.yaml"), refs)?;
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .current_dir(dir.path())
+        .args(["process", "--preset", "transparent", "--autolink", "false"])
+        .args(["-i", "post.md", "--refs", "refs.yaml"])
+        .args(["--action", "math-inline-to-text"])
+        .output_ok()?;
+    let actual = String::from_utf8(result.stdout)?;
+    let expected = "[x](https://destination.test) https://bare.test/[a\\][missing\\]\n\n\
+        [https://explicit.test/\\$secret\\$](https://explicit.test/$secret$)\n\n\
+        https://child.test/x\n\n\
+        Reference:\n\n- https://label.test : <https://destination.test>\n";
+    assert_eq!(actual, expected);
+    let stderr = String::from_utf8(result.stderr)?;
+    assert_eq!(
+        stderr,
+        "Warn: undefined reference \"[a][missing]\" in \"post.md\"\n"
+    );
+    dir.close()
+}
+
 /// Without `-i`, `-o` and `--action`, `xpmd process` reads stdin, and writes only the markdown,
 /// parsed and printed again, to stdout.
 #[test]

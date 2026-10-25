@@ -86,8 +86,7 @@ fn label_paragraph<'a>(loader: &Loader<'a>, label: &str) -> Node<'a> {
     let label = label.replace(['\r', '\n'], " ");
     let label = label.trim_start_matches([' ', '\t']);
     let markdown = format!("x {label}");
-    let options = super::gfm_math_options();
-    let root = comrak::parse_document(loader.arena, &markdown, &options);
+    let root = comrak::parse_document(loader.arena, &markdown, &loader.options);
     let markers = super::emphasis::markers(root, &markdown);
     loader.emphasis.borrow_mut().extend(markers);
     let paragraph = root.first_child().expect("the prefix makes a paragraph");

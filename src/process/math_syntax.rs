@@ -36,9 +36,9 @@ struct Scanner<'s> {
 }
 
 /// Hide TeX behind byte-for-byte placeholders, keeping source positions for refs and emphasis.
-pub(super) fn prepare(markdown: &str) -> anyhow::Result<Prepared> {
+pub(super) fn prepare(markdown: &str, options: &comrak::Options) -> anyhow::Result<Prepared> {
     let arena = Arena::new();
-    let mut options = super::gfm_math_options();
+    let mut options = options.clone();
     options.extension.math_dollars = false;
     options.parse.escaped_char_spans = true;
     // Recognize reference syntax even when its definition comes from --refs or front matter.
@@ -248,7 +248,7 @@ mod tests {
         for markdown in cases {
             let arena = Arena::new();
             let options = super::super::gfm_math_options();
-            let parsed = refs.parse(&arena, markdown, None)?;
+            let parsed = refs.parse(&arena, markdown, None, &options)?;
             let mut expected = String::new();
             comrak::format_html(parsed.root, &options, &mut expected)?;
             let loader = Loader::new(&arena, &[]);
