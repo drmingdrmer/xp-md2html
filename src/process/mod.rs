@@ -429,7 +429,7 @@ impl<'a> Loader<'a> {
             markdown.to_string()
         };
         let prepared = math_syntax::prepare(&markdown)?;
-        let parsed = refs.parse(self.arena, &prepared.markdown)?;
+        let parsed = refs.parse(self.arena, &prepared.markdown, Some(&markdown))?;
         prepared.restore(parsed.root);
         self.record_source(parsed.root, source);
         for reference in parsed.undefined {

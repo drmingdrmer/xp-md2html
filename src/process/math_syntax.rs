@@ -2,13 +2,16 @@
 
 use std::collections::BTreeMap;
 use std::ops::Range;
+use std::sync::Arc;
 use std::sync::LazyLock;
 
 use comrak::nodes::LineColumn;
 use comrak::nodes::NodeValue;
 use comrak::nodes::Sourcepos;
+use comrak::options::BrokenLinkReference;
 use comrak::Arena;
 use comrak::Node;
+use comrak::ResolvedReference;
 use fancy_regex::Regex;
 
 static MATH_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
@@ -38,6 +41,13 @@ pub(super) fn prepare(markdown: &str) -> anyhow::Result<Prepared> {
     let mut options = super::gfm_math_options();
     options.extension.math_dollars = false;
     options.parse.escaped_char_spans = true;
+    // Recognize reference syntax even when its definition comes from --refs or front matter.
+    options.parse.broken_link_callback = Some(Arc::new(|_: BrokenLinkReference| {
+        Some(ResolvedReference {
+            url: String::new(),
+            title: String::new(),
+        })
+    }));
     let root = comrak::parse_document(&arena, markdown, &options);
     let mut scanner = Scanner::new(markdown);
     for node in root.descendants() {
@@ -81,7 +91,7 @@ impl<'s> Scanner<'s> {
         }
         let parent = node.parent()?;
         let escaped = matches!(parent.data().value, NodeValue::Escaped);
-        if escaped {
+        if escaped || self.autolink(parent) {
             return None;
         }
         let block = node
@@ -91,6 +101,19 @@ impl<'s> Scanner<'s> {
         let start = self.offset(data.sourcepos.start);
         let end = self.offset(data.sourcepos.end) + 1;
         Some((start..end.min(self.source.len()), position))
+    }
+
+    fn autolink(&self, node: Node<'_>) -> bool {
+        let data = node.data();
+        if !matches!(data.value, NodeValue::Link(_)) {
+            return false;
+        }
+        let start = data.sourcepos.start;
+        if start.line == 0 || start.column == 0 {
+            return true;
+        }
+        let index = self.offset(start);
+        self.source.as_bytes()[index] != b'['
     }
 
     fn scan(&mut self, node: Node<'_>) -> anyhow::Result<()> {
@@ -207,6 +230,35 @@ mod tests {
     use super::*;
     use crate::process::refs::Refs;
     use crate::process::Loader;
+
+    #[test]
+    fn test_dollars_in_urls_and_reference_identifiers() -> anyhow::Result<()> {
+        let refs = Refs::load(
+            &[],
+            "---\nrefs:\n  '$secret$': https://a.invalid\n---\n",
+            None,
+        )?;
+        let cases = [
+            "<https://a.invalid/$secret$>",
+            "https://a.invalid/$secret$",
+            "[x][$secret$]",
+            "[x][$secret$]\n\n[$secret$]: https://a.invalid",
+            "$x$\n[q]: https://q.invalid\n",
+        ];
+        for markdown in cases {
+            let arena = Arena::new();
+            let options = super::super::gfm_math_options();
+            let parsed = refs.parse(&arena, markdown, None)?;
+            let mut expected = String::new();
+            comrak::format_html(parsed.root, &options, &mut expected)?;
+            let loader = Loader::new(&arena, &[]);
+            let root = loader.load(markdown, &refs)?;
+            let mut actual = String::new();
+            comrak::format_html(root, &options, &mut actual)?;
+            assert_eq!(actual, expected, "{markdown:?}");
+        }
+        Ok(())
+    }
 
     #[test]
     fn test_math_syntax_and_placement() -> anyhow::Result<()> {

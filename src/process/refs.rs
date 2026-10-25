@@ -85,11 +85,17 @@ impl Refs {
     /// Parse `markdown` into a tree in `arena`; a reference resolves with the markdown's own
     /// definition, else with these definitions. Return the tree, the used reference links and
     /// their labels in order, and the original delimiters of nested emphasis spans.
+    /// `original` supplies warning text when math is masked; it must keep the same byte positions.
     pub(crate) fn parse<'a>(
         &self,
         arena: &'a Arena<'a>,
         markdown: &str,
+        original: Option<&str>,
     ) -> anyhow::Result<Parsed<'a>> {
+        let original = original.unwrap_or(markdown);
+        if original.len() != markdown.len() {
+            anyhow::bail!("Prepared Markdown must preserve source byte positions");
+        }
         // comrak resolves a reference with the markdown's own definition and leaves no trace. So a
         // mark after the `[` of each such definition hides it from comrak: every reference then
         // goes to the callback, which gives a URL that names the label, and the walk after the
@@ -103,9 +109,11 @@ impl Refs {
         // also keeps the offsets of the definitions before it.
         let mut refs = self.clone();
         let mut marked = markdown.to_string();
+        let mut warning_source = original.to_string();
         let definitions = document_definitions(markdown)?;
         for (offset, key, definition) in definitions.into_iter().rev() {
             marked.insert(offset + 1, mark);
+            warning_source.insert(offset + 1, mark);
             refs.definitions.insert(key, definition);
         }
 
@@ -152,7 +160,7 @@ impl Refs {
             }
         }
         let emphasis = super::emphasis::markers(root, &marked);
-        let undefined = refs.undefined_references(root, &marked)?;
+        let undefined = refs.undefined_references(root, &warning_source)?;
         Ok(Parsed {
             root,
             references: links,
@@ -476,20 +484,23 @@ mod tests {
     #[test]
     fn test_undefined_references() -> anyhow::Result<()> {
         let markdown = "[text][missing] [collapsed][] ![image][absent] ![alt][] [shortcut]\n\n\
-            [*formatted*][unknown] [known][OK] [OK][] [OK]\n\n\
+            [*formatted*][unknown] [known][OK] [OK][] [OK] [math $secret$][missing]\n\n\
             `[code][missing]` \\[escaped][missing] $[math][missing]$\n\n\
             [outer [inner][missing]](https://example.invalid)\n\n\
             <a href=\"u\">[html][missing]</a> <A href=\"u\">![html][]</A>\n\n\
             <abbr>[after][missing]</abbr>\n\n\
             ```\n[code][missing]\n```\n\n[ok]: https://example.invalid\n";
         let arena = Arena::new();
-        let parsed = Refs::default().parse(&arena, markdown)?;
+        let refs = Refs::default();
+        let prepared = super::super::math_syntax::prepare(markdown)?;
+        let parsed = refs.parse(&arena, &prepared.markdown, Some(markdown))?;
         let expected = [
             "[text][missing]",
             "[collapsed][]",
             "![image][absent]",
             "![alt][]",
             "[*formatted*][unknown]",
+            "[math $secret$][missing]",
             "[after][missing]",
         ];
         assert_eq!(parsed.undefined, expected);
@@ -610,7 +621,7 @@ mod tests {
             root,
             references: links,
             ..
-        } = refs.parse(&arena, markdown)?;
+        } = refs.parse(&arena, markdown, None)?;
 
         let mut out = String::new();
         let options = super::super::gfm_math_options();
@@ -660,7 +671,7 @@ mod tests {
             root,
             references: links,
             ..
-        } = Refs::default().parse(&arena, markdown)?;
+        } = Refs::default().parse(&arena, markdown, None)?;
         let mut out = String::new();
         comrak::format_commonmark(root, &options, &mut out)?;
         assert_eq!(out, expected);
@@ -673,7 +684,7 @@ mod tests {
     /// The markdown of the tree that `refs` parses from `markdown`.
     fn format_parsed(refs: &Refs, markdown: &str) -> anyhow::Result<String> {
         let arena = Arena::new();
-        let Parsed { root, .. } = refs.parse(&arena, markdown)?;
+        let Parsed { root, .. } = refs.parse(&arena, markdown, None)?;
         let mut out = String::new();
         let options = super::super::gfm_math_options();
         comrak::format_commonmark(root, &options, &mut out)?;
