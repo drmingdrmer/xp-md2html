@@ -76,6 +76,11 @@ impl Preset {
     /// - No conversion changes the reference list, except weibo's `flatten-lists`, which flattens it
     ///   as md2zhihu writes it for Weibo: without a `<p>` in a `<li>`.
     pub fn actions(self) -> Vec<Action> {
+        self.actions_with_code_widths(code_to_image::CodeWidths::default())
+    }
+
+    /// The platform's actions, with code image widths set before conversion.
+    pub fn actions_with_code_widths(self, widths: code_to_image::CodeWidths) -> Vec<Action> {
         let mut actions = vec![
             Action::JoinMathBlock,
             Action::EmbedMarkdown,
@@ -84,18 +89,16 @@ impl Preset {
             Action::LinkToAsset,
             Action::AppendReferenceList,
         ];
-        actions.extend(self.conversions());
+        actions.extend(self.conversions(widths));
         actions
     }
 
     /// The actions of md2zhihu's converters for this platform.
-    fn conversions(self) -> Vec<Action> {
+    fn conversions(self, widths: code_to_image::CodeWidths) -> Vec<Action> {
         let zhihu_math = Action::MathToImgTag {
             service: MathService::Zhihu,
         };
-        let code = Action::CodeToImage {
-            width: code_to_image::DEFAULT_WIDTH,
-        };
+        let code = Action::CodeToImage { widths };
         match self {
             Self::Zhihu => vec![
                 zhihu_math,

@@ -183,8 +183,8 @@ pub enum Action {
     /// Replace every code block with a PNG of it. It takes ```` ```mermaid ```` and
     /// ```` ```graphviz ```` blocks too, so it runs after `mermaid-to-image` and `graphviz-to-image`.
     CodeToImage {
-        /// The width in pixels at which a block without a language wraps.
-        width: u32,
+        /// The wrap widths for blocks with and without a language.
+        widths: code_to_image::CodeWidths,
     },
     /// Replace every formula, also a ```` ```math ```` block, with a PNG of it, or with the image
     /// of an online formula service.
@@ -251,13 +251,17 @@ impl FromStr for Action {
             ("mermaid-to-image", None) => Ok(Self::MermaidToImage),
             ("graphviz-to-image", None) => Ok(Self::GraphvizToImage),
             ("code-to-image", None) => Ok(Self::CodeToImage {
-                width: code_to_image::DEFAULT_WIDTH,
+                widths: code_to_image::CodeWidths::default(),
             }),
             ("code-to-image", Some(width)) => {
                 let width = width.parse().map_err(|_| {
                     format!("invalid action: {name}; code-to-image=WIDTH takes a width in pixels")
                 })?;
-                Ok(Self::CodeToImage { width })
+                let widths = code_to_image::CodeWidths {
+                    plain: width,
+                    ..Default::default()
+                };
+                Ok(Self::CodeToImage { widths })
             }
             ("math-to-image", None) => Ok(Self::MathToImage { service: None }),
             ("math-to-image", Some(service)) => {
@@ -327,7 +331,7 @@ impl Action {
             Self::TableToHtml => table_to_html::apply(arena, root),
             Self::MermaidToImage => mermaid_to_image::apply(arena, root, ctx),
             Self::GraphvizToImage => graphviz_to_image::apply(arena, root, ctx),
-            Self::CodeToImage { width } => code_to_image::apply(arena, root, *width, ctx),
+            Self::CodeToImage { widths } => code_to_image::apply(arena, root, *widths, ctx),
             Self::MathToImage { service } => math_to_image::apply(arena, root, *service, ctx),
             Self::MathToImgTag { service } => {
                 math_to_img_tag::apply(root, *service);
@@ -767,10 +771,20 @@ mod tests {
         assert_eq!(error, Err("unknown action: shift".to_string()));
 
         let code = Action::from_str("code-to-image");
-        assert_eq!(code, Ok(Action::CodeToImage { width: 1000 }));
+        let default_widths = code_to_image::CodeWidths::default();
+        assert_eq!(
+            code,
+            Ok(Action::CodeToImage {
+                widths: default_widths
+            })
+        );
 
         let code_800 = Action::from_str("code-to-image=800");
-        assert_eq!(code_800, Ok(Action::CodeToImage { width: 800 }));
+        let widths = code_to_image::CodeWidths {
+            plain: 800,
+            ..default_widths
+        };
+        assert_eq!(code_800, Ok(Action::CodeToImage { widths }));
 
         let bad_width = Action::from_str("code-to-image=wide");
         let expected_error =

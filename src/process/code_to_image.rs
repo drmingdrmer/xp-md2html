@@ -17,28 +17,45 @@ pub const DEFAULT_WIDTH: u32 = 1000;
 
 /// The width in pixels at which a block with a language wraps, as in md2zhihu's
 /// `block_code_to_fixwidth_jpg`.
-const LANG_WIDTH: u32 = 600;
+pub const LANG_WIDTH: u32 = 600;
+
+/// Wrap widths for code images, in CSS pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CodeWidths {
+    /// The width of code with a language.
+    pub language: u32,
+    /// The width of code without a language.
+    pub plain: u32,
+}
+
+impl Default for CodeWidths {
+    fn default() -> Self {
+        Self {
+            language: LANG_WIDTH,
+            plain: DEFAULT_WIDTH,
+        }
+    }
+}
 
 /// The language of a block that comrak renders as display math, not as code.
 pub(crate) const MATH_LANG: &str = "math";
 
 /// Replace every code block under `root` with a PNG that `ctx.renderer` renders into
-/// `ctx.assets_dir`; a block without a language wraps at `width` pixels, one with a language at
-/// `LANG_WIDTH`.
+/// `ctx.assets_dir`, using the wrap width for its language or plain text.
 pub fn apply<'a>(
     arena: &'a Arena<'a>,
     root: Node<'a>,
-    width: u32,
+    widths: CodeWidths,
     ctx: &ActionContext,
 ) -> anyhow::Result<()> {
     let theme = load_theme(DEFAULT_THEME)?;
     let plain_style = CodeStyle {
         theme: theme.clone(),
-        width,
+        width: widths.plain,
     };
     let lang_style = CodeStyle {
         theme,
-        width: LANG_WIDTH,
+        width: widths.language,
     };
 
     replace_all_code_blocks(arena, root, |lang, code| {

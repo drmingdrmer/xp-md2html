@@ -351,6 +351,52 @@ fn test_process_code_to_image() -> Result<()> {
     output_dir.close()
 }
 
+#[test]
+fn test_process_preset_code_widths() -> Result<()> {
+    let dir = TestDir::new()?;
+    let line = "long code line ".repeat(100);
+    let markdown = format!("```rust\n{line}\n```\n\n```\n{line}\n```\n");
+    let cases = [
+        (vec![], vec![600, 1000]),
+        (vec!["--code-width", "700"], vec![700, 700]),
+        (vec!["--plain-code-width", "800"], vec![600, 800]),
+        (
+            vec!["--code-width", "700", "--plain-code-width", "800"],
+            vec![700, 800],
+        ),
+    ];
+    for preset in ["wechat", "weibo", "simple"] {
+        let mut outputs = Vec::new();
+        for (options, expected_widths) in &cases {
+            let assets = dir.path().join(preset);
+            let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+                .current_dir(dir.path())
+                .args(["process", "--preset", preset, "--scale", "1", "--assets"])
+                .arg(&assets)
+                .args(options)
+                .output_ok_with_stdin(markdown.as_bytes())?;
+            let printed = String::from_utf8(result.stdout)?;
+            let options = xp_md2html::process::gfm_math_options();
+            let arena = comrak::Arena::new();
+            let root = comrak::parse_document(&arena, &printed, &options);
+            let mut widths = Vec::new();
+            for node in root.descendants() {
+                if let comrak::nodes::NodeValue::Image(link) = &node.data().value {
+                    let file = dir.path().join(&link.url);
+                    let (width, _) = image::image_dimensions(file)?;
+                    widths.push(width);
+                }
+            }
+            assert_eq!(&widths, expected_widths);
+            outputs.push(printed);
+        }
+        // Changing only the wrap width must also change the cached image name.
+        assert_ne!(outputs[0], outputs[1]);
+        assert_ne!(outputs[1], outputs[3]);
+    }
+    dir.close()
+}
+
 /// `xpmd process --action code-to-image=4294967295` fails with an error instead of a panic: the
 /// width plus the page padding passes `u32::MAX`, a window that Chrome cannot take.
 #[test]

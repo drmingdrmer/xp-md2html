@@ -12,6 +12,8 @@ use clap::Args;
 use clap::Parser;
 use clap::Subcommand;
 use fancy_regex::Regex;
+use xp_md2html::process::code_to_image;
+use xp_md2html::process::code_to_image::CodeWidths;
 use xp_md2html::process::embed_markdown;
 use xp_md2html::process::preset::Preset;
 use xp_md2html::process::refs::Refs;
@@ -135,6 +137,14 @@ struct ProcessArgs {
     /// Device scale factor: 2 renders every CSS pixel as 2x2 image pixels, for HiDPI screens
     #[arg(long, default_value = "2")]
     scale: u32,
+
+    /// Wrap width in pixels for all code images [default: 600 with a language, 1000 without]
+    #[arg(long, value_name = "PIXELS", value_parser = clap::value_parser!(u32).range(1..))]
+    code_width: Option<u32>,
+
+    /// Override the wrap width for code without a language [default: --code-width, else 1000]
+    #[arg(long, value_name = "PIXELS", value_parser = clap::value_parser!(u32).range(1..))]
+    plain_code_width: Option<u32>,
 
     /// Run the actions of an md2zhihu platform before the --action ones; NAME is one of: zhihu, github, wechat, weibo, simple, minimal_mistake, hugo, transparent
     ///
@@ -585,6 +595,8 @@ fn process_command(args: ProcessArgs) -> Result<()> {
         ref_files,
         embed_patterns,
         actions,
+        code_width,
+        plain_code_width,
     } = args;
 
     let markdown = read_input(input.as_deref())?;
@@ -650,14 +662,33 @@ fn process_command(args: ProcessArgs) -> Result<()> {
     };
 
     // The preset's actions run first, so an `--action` such as `rewrite-link-urls` sees their links.
+    let widths = CodeWidths {
+        language: code_width.unwrap_or(code_to_image::LANG_WIDTH),
+        plain: plain_code_width
+            .or(code_width)
+            .unwrap_or(code_to_image::DEFAULT_WIDTH),
+    };
     let mut all_actions = match preset {
-        Some(preset) => preset.actions(),
+        Some(preset) => preset.actions_with_code_widths(widths),
         None => Vec::new(),
     };
     if keep_front_matter {
         all_actions.retain(|action| *action != Action::DropFrontMatter);
     }
     all_actions.extend(actions);
+    if code_width.is_some() || plain_code_width.is_some() {
+        for action in &mut all_actions {
+            if let Action::CodeToImage {
+                widths: action_widths,
+            } = action
+            {
+                action_widths.language = widths.language;
+                action_widths.plain = plain_code_width
+                    .or(code_width)
+                    .unwrap_or(action_widths.plain);
+            }
+        }
+    }
 
     let source = input.as_deref().unwrap_or_else(|| Path::new("<stdin>"));
     let processed =
