@@ -2047,6 +2047,65 @@ fn test_process_fenced_plain_code() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn test_process_invalid_output_before_assets() -> Result<()> {
+    let dir = TestDir::new()?;
+    fs::write(dir.path().join("post.md"), "```\ncode\n```\n")?;
+    fs::write(dir.path().join("file"), "keep")?;
+    fs::create_dir(dir.path().join("folder"))?;
+    let outputs = [
+        "folder",
+        "folder/",
+        ".",
+        "new/",
+        "file/out.md",
+        "file/new/out.md",
+    ];
+    for output in outputs {
+        let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+            .current_dir(dir.path())
+            .args(["process", "-i", "post.md", "-o", output])
+            .args(["--assets", "assets", "--action", "code-to-image"])
+            .output_bounded()?;
+        assert_eq!(result.status.code(), Some(2));
+        assert_eq!(result.stdout, b"");
+        let stderr = String::from_utf8(result.stderr)?;
+        assert!(
+            stderr.contains("output path") || stderr.contains("Output path"),
+            "{stderr}"
+        );
+        let mut entries = fs::read_dir(dir.path())?
+            .map(|entry| entry.map(|entry| entry.file_name()))
+            .collect::<io::Result<Vec<_>>>()?;
+        entries.sort();
+        let expected = [
+            OsString::from("file"),
+            OsString::from("folder"),
+            OsString::from("post.md"),
+        ];
+        assert_eq!(entries, expected);
+        let sentinel = fs::read_to_string(dir.path().join("file"))?;
+        assert_eq!(sentinel, "keep");
+    }
+    dir.close()
+}
+
+#[test]
+fn test_process_in_place() -> Result<()> {
+    let dir = TestDir::new()?;
+    let input = dir.path().join("post.md");
+    fs::write(&input, "    code\n")?;
+    Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "-i"])
+        .arg(&input)
+        .arg("-o")
+        .arg(&input)
+        .output_ok()?;
+    let actual = fs::read_to_string(input)?;
+    assert_eq!(actual, "```\ncode\n```\n");
+    dir.close()
+}
+
 /// Without `-i`, `-o` and `--action`, `xpmd process` reads stdin, and writes only the markdown,
 /// parsed and printed again, to stdout.
 #[test]

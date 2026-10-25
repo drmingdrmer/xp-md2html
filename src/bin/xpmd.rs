@@ -294,6 +294,16 @@ const MATH_WINDOW_WIDTH: u32 = 1000;
 const MATH_WINDOW_HEIGHT: u32 = 2000;
 
 fn main() -> Result<()> {
+    let result = run();
+    if let Err(error) = &result {
+        if let Some(error) = error.downcast_ref::<clap::Error>() {
+            error.exit();
+        }
+    }
+    result
+}
+
+fn run() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
@@ -581,6 +591,14 @@ fn resolve_svg_format(format: Option<&str>, output: Option<&Path>) -> Result<Out
 }
 
 fn process_command(args: ProcessArgs) -> Result<()> {
+    if let Some(output) = &args.output {
+        validate_output(output).map_err(|error| {
+            clap::Error::raw(
+                clap::error::ErrorKind::ValueValidation,
+                format!("{error:#}"),
+            )
+        })?;
+    }
     let ProcessArgs {
         input,
         output,
@@ -700,6 +718,44 @@ fn process_command(args: ProcessArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Check the destination and existing parents without creating files or directories.
+fn validate_output(path: &Path) -> Result<()> {
+    if path.file_name().is_none() || path.as_os_str().as_encoded_bytes().ends_with(b"/") {
+        anyhow::bail!("Output path must name a file: {}", path.display());
+    }
+    for (depth, part) in path.ancestors().enumerate() {
+        if part.as_os_str().is_empty() {
+            continue;
+        }
+        let metadata = output_metadata(part)
+            .with_context(|| format!("Invalid output path: {}", part.display()))?;
+        let Some(meta) = metadata else { continue };
+        let valid = if depth == 0 {
+            meta.is_file()
+        } else {
+            meta.is_dir()
+        };
+        if !valid {
+            anyhow::bail!("Invalid output path: {}", part.display());
+        }
+    }
+    Ok(())
+}
+
+/// Missing paths may be created later; broken symlinks cannot be created as directories.
+fn output_metadata(path: &Path) -> Result<Option<fs::Metadata>> {
+    match fs::metadata(path) {
+        Ok(meta) => return Ok(Some(meta)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    match fs::symlink_metadata(path) {
+        Ok(_) => anyhow::bail!("dangling symlink"),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
 }
 
 /// The output formats that `-f` and the output file's extension accept, as error messages list them.
