@@ -136,46 +136,30 @@ fn context(dir: &Path, autolink: bool) -> ActionContext {
     }
 }
 
-fn check_roundtrips(fixtures: &str, known_changes: &str) -> Result<()> {
+fn check_roundtrips(fixtures: &str) -> Result<()> {
     let cases: BTreeMap<String, String> = serde_json::from_str(fixtures)?;
-    let known: BTreeMap<String, String> = serde_json::from_str(known_changes)?;
     let dir = TestDir::new()?;
-    let mut changed = BTreeMap::new();
-    let mut expected_changes = BTreeMap::new();
     for autolink in [false, true] {
-        for (name, written) in &known {
-            expected_changes.insert((name, autolink), written.clone());
-        }
         let mut ctx = context(dir.path(), autolink);
         for (name, markdown) in &cases {
             ctx.refs = Refs::load(&[], markdown, None)?;
             let expected = document_meaning(markdown, autolink)?;
             let written = process_markdown(markdown, &[], &ctx)?;
             let actual = document_meaning(&written, autolink)?;
-            if actual != expected {
-                if known.get(name) != Some(&written) {
-                    eprintln!("CASE: {name} {autolink}\nEXPECTED:\n{expected:#?}\nACTUAL:\n{actual:#?}\nWRITTEN:{written:?}");
-                }
-                changed.insert((name, autolink), written);
-            }
+            assert_eq!(actual, expected, "{name}, autolink={autolink}: {written:?}");
         }
     }
-    assert_eq!(changed, expected_changes);
     dir.close()
 }
 
 #[test]
 fn test_commonmark_roundtrips() -> Result<()> {
-    check_roundtrips(include_str!("../fixtures/commonmark.json"), "{}")
+    check_roundtrips(include_str!("../fixtures/commonmark.json"))
 }
 
 #[test]
-fn test_md2zhihu_roundtrips_with_known_losses() -> Result<()> {
-    // Pin the remaining TeX pipe escape loss until its formatter handling is fixed.
-    check_roundtrips(
-        include_str!("../fixtures/md2zhihu-cases.json"),
-        include_str!("../fixtures/md2zhihu-known-changes.json"),
-    )
+fn test_md2zhihu_roundtrips() -> Result<()> {
+    check_roundtrips(include_str!("../fixtures/md2zhihu-cases.json"))
 }
 
 #[test]
@@ -280,6 +264,39 @@ fn test_list_block_boundaries_survive_roundtrips() -> Result<()> {
         assert_eq!(actual, expected, "{source:?} became {written:?}");
         let repeated = process_markdown(&written, &[], &ctx)?;
         assert_eq!(repeated, written);
+    }
+    dir.close()
+}
+
+#[test]
+fn test_math_pipe_escapes_survive_table_roundtrips() -> Result<()> {
+    let dir = TestDir::new()?;
+    let ctx = context(dir.path(), false);
+    let formulas = [
+        "$a\\|b$",
+        "$$a\\|b$$",
+        "$\\|a\\| + \\|b\\|$",
+        "$a\\\\|b$",
+        "$a\\\\\\|b$",
+        "$`a\\|b`$",
+        "$`a\\\\|b`$",
+        "`a\\|b`",
+    ];
+    for formula in formulas {
+        let cases = [
+            format!("| expression | note |\n| --- | --- |\n| {formula} | value |\n"),
+            format!("| {formula} | note |\n| --- | --- |\n| value | body |\n"),
+            format!("- | expression | note |\n  | --- | --- |\n  | {formula} | value |\n"),
+            format!("Outside: {formula}\n"),
+        ];
+        for source in cases {
+            let expected = document_meaning(&source, false)?;
+            let written = process_markdown(&source, &[], &ctx)?;
+            let actual = document_meaning(&written, false)?;
+            assert_eq!(actual, expected, "{source:?} became {written:?}");
+            let repeated = process_markdown(&written, &[], &ctx)?;
+            assert_eq!(repeated, written);
+        }
     }
     dir.close()
 }

@@ -553,6 +553,7 @@ pub fn process_markdown_from(
     emphasis::prepare(&arena, &loader.emphasis.borrow());
     escape_link_attributes(root)?;
     block_boundaries::prepare(&arena, root);
+    math_syntax::prepare_for_format(root);
 
     let mut out = String::new();
     let mut options = loader.options.clone();

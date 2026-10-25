@@ -202,6 +202,24 @@ impl Prepared {
     }
 }
 
+/// Account for the pipe escape that the table formatter adds to restored dollar math.
+pub(super) fn prepare_for_format(root: Node<'_>) {
+    for node in root.descendants() {
+        let in_cell = node
+            .ancestors()
+            .any(|parent| matches!(parent.data().value, NodeValue::TableCell));
+        if !in_cell {
+            continue;
+        }
+        let mut data = node.data_mut();
+        if let NodeValue::Math(math) = &mut data.value {
+            if math.dollar_math {
+                math.literal = math.literal.replace("\\|", "|");
+            }
+        }
+    }
+}
+
 /// Display math starts its paragraph and ends a line, independently of its dollar count.
 pub(super) fn is_display(node: Node<'_>) -> bool {
     starts_paragraph(node) && ends_line(node)
