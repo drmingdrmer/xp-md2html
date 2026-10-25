@@ -1709,6 +1709,83 @@ fn test_process_embed_refs() -> Result<()> {
     dir.close()
 }
 
+/// Explicit missing references warn once per use in their own file; shortcuts remain plain text.
+#[test]
+fn test_process_undefined_references() -> Result<()> {
+    let dir = TestDir::new()?;
+    let input = dir.path().join("post.md");
+    let child = dir.path().join("sub.md");
+    fs::write(&input, "[a][nope] [b][] [literal]\n\n![](sub.md)\n")?;
+    fs::write(&child, "![i][missing] ![j][] [shortcut]\n")?;
+    let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+        .args(["process", "--action", "embed-markdown", "-i"])
+        .arg(&input)
+        .output_ok()?;
+    let stderr = String::from_utf8(result.stderr)?;
+    let expected = format!(
+        "Warn: undefined reference \"[a][nope]\" in {0:?}\n\
+        Warn: undefined reference \"[b][]\" in {0:?}\n\
+        Warn: undefined reference \"![i][missing]\" in {1:?}\n\
+        Warn: undefined reference \"![j][]\" in {1:?}\n",
+        input.display().to_string(),
+        child.display().to_string()
+    );
+    assert_eq!(stderr, expected);
+    let stdout = String::from_utf8(result.stdout)?;
+    let options = xp_md2html::process::gfm_math_options();
+    let html = comrak::markdown_to_html(&stdout, &options);
+    assert_eq!(
+        html,
+        "<p>[a][nope] [b][] [literal]</p>\n<p>![i][missing] ![j][] [shortcut]</p>\n"
+    );
+    dir.close()
+}
+
+/// Missing assets identify the file that uses them, including after nested embedding.
+#[test]
+fn test_process_missing_asset_source() -> Result<()> {
+    let dir = TestDir::new()?;
+    fs::create_dir(dir.path().join("sub"))?;
+    let input = dir.path().join("post.md");
+    let child = dir.path().join("sub/child.md");
+    fs::write(&input, "![](sub/child.md)\n")?;
+    for name in ["missing.svg", "missing.md"] {
+        fs::write(&child, format!("![x]({name})\n"))?;
+        let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+            .args([
+                "process",
+                "--action",
+                "embed-markdown",
+                "--action",
+                "image-to-asset",
+                "-i",
+            ])
+            .arg(&input)
+            .env_remove("RUST_BACKTRACE")
+            .env_remove("RUST_LIB_BACKTRACE")
+            .output_bounded()?;
+        let status = result.status.code();
+        assert_eq!(status, Some(1));
+        assert_eq!(result.stdout, b"");
+        let stderr = String::from_utf8(result.stderr)?;
+        let first_line = stderr.lines().next();
+        let missing = dir.path().join("sub").join(name);
+        let expected = if name.ends_with(".md") {
+            format!(
+                "Error: Failed to read embedded markdown: {} (used in {})",
+                missing.display(),
+                child.display()
+            )
+        } else {
+            format!("Error: Used in {}", child.display())
+        };
+        assert_eq!(first_line, Some(expected.as_str()));
+        let mentions_asset = stderr.contains(&missing.display().to_string());
+        assert!(mentions_asset, "{stderr}");
+    }
+    dir.close()
+}
+
 /// `append-reference-list` lists the definitions that the links of an embedded file use: the
 /// file's own and those of `--refs`.
 #[test]

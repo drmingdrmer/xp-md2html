@@ -68,8 +68,14 @@ fn embed<'a>(
 
     for (paragraph, url) in embeds {
         let path = resolve(ctx.root_dir, base_dir, &url);
-        let text = fs::read_to_string(&path)
-            .with_context(|| format!("Failed to read embedded markdown: {}", path.display()))?;
+        let source = ctx.loader.source(paragraph);
+        let text = fs::read_to_string(&path).with_context(|| {
+            format!(
+                "Failed to read embedded markdown: {} (used in {})",
+                path.display(),
+                source.display()
+            )
+        })?;
         let identity = fs::canonicalize(&path)?;
         if ctx.chain.contains(&identity) {
             let mut cycle: Vec<String> =
@@ -86,7 +92,7 @@ fn embed<'a>(
             .with_context(|| format!("Failed to load the refs of: {}", path.display()))?;
         let embedded = ctx
             .loader
-            .load(&text, &refs)
+            .load_from(&text, &refs, &path)
             .with_context(|| format!("Failed to parse embedded markdown: {}", path.display()))?;
 
         ctx.chain.push(identity);
@@ -275,7 +281,7 @@ mod tests {
         let result = embed_md(&arena, root, dir.path());
         let message = result.unwrap_err().to_string();
         let expected = format!(
-            "Failed to read embedded markdown: {}",
+            "Failed to read embedded markdown: {} (used in <stdin>)",
             dir.path().join("none.md").display()
         );
         assert_eq!(message, expected);

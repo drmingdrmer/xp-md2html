@@ -15,6 +15,7 @@ use comrak::options::BrokenLinkReference;
 use comrak::Arena;
 use comrak::Node;
 use comrak::ResolvedReference;
+use fancy_regex::Regex;
 use markdown::mdast;
 use yaml_rust2::Yaml;
 use yaml_rust2::YamlLoader;
@@ -38,6 +39,7 @@ pub(crate) struct Parsed<'a> {
     pub root: Node<'a>,
     pub references: Vec<(Node<'a>, String)>,
     pub emphasis: Vec<(Node<'a>, &'static str)>,
+    pub undefined: Vec<String>,
 }
 
 /// Link reference definitions from outside the markdown file.
@@ -150,11 +152,49 @@ impl Refs {
             }
         }
         let emphasis = super::emphasis::markers(root, &marked);
+        let undefined = refs.undefined_references(root, &marked)?;
         Ok(Parsed {
             root,
             references: links,
             emphasis,
+            undefined,
         })
+    }
+
+    fn undefined_references(&self, root: Node<'_>, markdown: &str) -> anyhow::Result<Vec<String>> {
+        let eligible = warning_text(root, markdown);
+        let pattern = Regex::new(r"!?\[((?:\\.|[^\[\]\\])*)\]\[((?:\\.|[^\[\]\\])*)\]")?;
+        let mut undefined = Vec::new();
+        for found in pattern.captures_iter(markdown) {
+            let found = found?;
+            let whole = found.get(0).unwrap();
+            let first = found.get(1).unwrap();
+            let second = found.get(2).unwrap();
+            let bracket = whole.start() + usize::from(whole.as_str().starts_with('!'));
+            if escaped_at(markdown, bracket) {
+                continue;
+            }
+            let plain = [
+                whole.start(),
+                first.end(),
+                second.start() - 1,
+                whole.end() - 1,
+            ];
+            if !plain.iter().all(|index| eligible[*index]) {
+                continue;
+            }
+            let second_label = second.as_str();
+            let label = if second_label.is_empty() {
+                first.as_str()
+            } else {
+                second_label
+            };
+            let key = normalize_label(label);
+            if !self.definitions.contains_key(&key) {
+                undefined.push(whole.as_str().to_string());
+            }
+        }
+        Ok(undefined)
     }
 
     /// Add the `universal` list of the YAML file at `path`, then its list named by `platform`.
@@ -238,6 +278,69 @@ impl Refs {
         };
         self.definitions.insert(normalize_label(label), definition);
         Ok(())
+    }
+}
+
+fn escaped_at(markdown: &str, index: usize) -> bool {
+    let preceding = markdown[..index].bytes().rev();
+    let backslashes = preceding.take_while(|byte| *byte == b'\\').count();
+    backslashes % 2 == 1
+}
+
+/// Source bytes that belong to plain inline content, outside code, links and HTML anchors.
+fn warning_text(root: Node<'_>, markdown: &str) -> Vec<bool> {
+    let mut lines = vec![0];
+    let starts = markdown.match_indices('\n').map(|(index, _)| index + 1);
+    lines.extend(starts);
+    let mut eligible = vec![false; markdown.len()];
+    let mut html_depth: usize = 0;
+    for node in root.descendants() {
+        let data = node.data();
+        if let NodeValue::HtmlInline(html) = &data.value {
+            match html_link_tag(html) {
+                Some(true) => html_depth = html_depth.saturating_sub(1),
+                Some(false) => html_depth += 1,
+                None => {}
+            }
+        }
+        if html_depth == 0 && warning_node(node) {
+            let start = data.sourcepos.start;
+            let end = data.sourcepos.end;
+            let start = lines[start.line - 1] + start.column - 1;
+            let end = lines[end.line - 1] + end.column;
+            eligible[start..end].fill(true);
+        }
+    }
+    eligible
+}
+
+fn warning_node(node: Node<'_>) -> bool {
+    if !matches!(node.data().value, NodeValue::Text(_)) {
+        return false;
+    }
+    let opaque = node.ancestors().any(|parent| {
+        matches!(
+            parent.data().value,
+            NodeValue::Link(_) | NodeValue::Image(_) | NodeValue::Escaped
+        )
+    });
+    !opaque
+}
+
+/// Whether an HTML inline opens or closes an anchor; `<abbr>` is a different tag.
+fn html_link_tag(html: &str) -> Option<bool> {
+    let html = html.trim_start().to_ascii_lowercase();
+    let (closing, after) = if let Some(after) = html.strip_prefix("</a") {
+        (true, after)
+    } else {
+        let after = html.strip_prefix("<a")?;
+        (false, after)
+    };
+    let boundary = after.starts_with('>') || after.starts_with(char::is_whitespace);
+    if boundary {
+        Some(closing)
+    } else {
+        None
     }
 }
 
@@ -368,6 +471,29 @@ fn normalize_label(label: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_undefined_references() -> anyhow::Result<()> {
+        let markdown = "[text][missing] [collapsed][] ![image][absent] ![alt][] [shortcut]\n\n\
+            [*formatted*][unknown] [known][OK] [OK][] [OK]\n\n\
+            `[code][missing]` \\[escaped][missing] $[math][missing]$\n\n\
+            [outer [inner][missing]](https://example.invalid)\n\n\
+            <a href=\"u\">[html][missing]</a> <A href=\"u\">![html][]</A>\n\n\
+            <abbr>[after][missing]</abbr>\n\n\
+            ```\n[code][missing]\n```\n\n[ok]: https://example.invalid\n";
+        let arena = Arena::new();
+        let parsed = Refs::default().parse(&arena, markdown)?;
+        let expected = [
+            "[text][missing]",
+            "[collapsed][]",
+            "![image][absent]",
+            "![alt][]",
+            "[*formatted*][unknown]",
+            "[after][missing]",
+        ];
+        assert_eq!(parsed.undefined, expected);
+        Ok(())
+    }
 
     /// A later definition of a label replaces an earlier one: the files' `universal` lists, then
     /// their lists named by the platform, then the front matter's `refs` and

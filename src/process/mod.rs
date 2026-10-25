@@ -32,6 +32,7 @@ use std::path::Component;
 use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use anyhow::Context;
 use comrak::nodes::NodeLink;
@@ -317,8 +318,12 @@ impl Action {
             Self::TableToImage => table_to_image::apply(arena, root, ctx),
             Self::DownloadImages => download_images::apply(root, ctx),
             Self::EmbedMarkdown => embed_markdown::apply(loader, root, ctx),
-            Self::ImageToAsset => image_to_asset::apply(root, ctx),
-            Self::LinkToAsset => link_to_asset::apply(root, ctx),
+            Self::ImageToAsset => {
+                loader.apply_to_links(root, |node| image_to_asset::apply(node, ctx))
+            }
+            Self::LinkToAsset => {
+                loader.apply_to_links(root, |node| link_to_asset::apply(node, ctx))
+            }
             Self::TableToHtml => table_to_html::apply(arena, root),
             Self::MermaidToImage => mermaid_to_image::apply(arena, root, ctx),
             Self::GraphvizToImage => graphviz_to_image::apply(arena, root, ctx),
@@ -388,6 +393,8 @@ pub struct Loader<'a> {
     references: RefCell<Vec<(Node<'a>, String)>>,
     /// The original delimiters of each emphasis span, including spans in embedded files.
     emphasis: RefCell<Vec<(Node<'a>, &'static str)>>,
+    /// Each parsed node's source file, retained when embedding moves it into another tree.
+    sources: RefCell<HashMap<usize, Arc<Path>>>,
 }
 
 impl<'a> Loader<'a> {
@@ -399,12 +406,23 @@ impl<'a> Loader<'a> {
             joins: actions.contains(&Action::JoinMathBlock),
             references: RefCell::default(),
             emphasis: RefCell::default(),
+            sources: RefCell::default(),
         }
     }
 
     /// Parse `markdown` into a tree; a reference that the markdown does not define resolves with
     /// `refs`.
     pub fn load(&self, markdown: &str, refs: &Refs) -> anyhow::Result<Node<'a>> {
+        self.load_from(markdown, refs, Path::new("<stdin>"))
+    }
+
+    /// Parse `markdown` from `source`, retaining its identity for warnings and asset errors.
+    pub fn load_from(
+        &self,
+        markdown: &str,
+        refs: &Refs,
+        source: &Path,
+    ) -> anyhow::Result<Node<'a>> {
         let markdown = if self.joins {
             join_math_block::join(markdown)
         } else {
@@ -413,9 +431,52 @@ impl<'a> Loader<'a> {
         let prepared = math_syntax::prepare(&markdown)?;
         let parsed = refs.parse(self.arena, &prepared.markdown)?;
         prepared.restore(parsed.root);
+        self.record_source(parsed.root, source);
+        for reference in parsed.undefined {
+            eprintln!(
+                "Warn: undefined reference {reference:?} in {:?}",
+                source.display().to_string()
+            );
+        }
         self.references.borrow_mut().extend(parsed.references);
         self.emphasis.borrow_mut().extend(parsed.emphasis);
         Ok(parsed.root)
+    }
+
+    fn record_source(&self, root: Node<'a>, source: &Path) {
+        let source: Arc<Path> = source.into();
+        let mut sources = self.sources.borrow_mut();
+        for node in root.descendants() {
+            let key = node as *const _ as usize;
+            sources.insert(key, source.clone());
+        }
+    }
+
+    pub(super) fn source(&self, node: Node<'_>) -> Arc<Path> {
+        let sources = self.sources.borrow();
+        for parent in node.ancestors() {
+            let key = parent as *const _ as usize;
+            if let Some(source) = sources.get(&key) {
+                return source.clone();
+            }
+        }
+        Path::new("<stdin>").into()
+    }
+
+    fn apply_to_links(
+        &self,
+        root: Node<'a>,
+        mut apply: impl FnMut(Node<'a>) -> anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
+        for node in root.descendants() {
+            let linked = matches!(node.data().value, NodeValue::Link(_) | NodeValue::Image(_));
+            if !linked {
+                continue;
+            }
+            let source = self.source(node);
+            apply(node).with_context(|| format!("Used in {}", source.display()))?;
+        }
+        Ok(())
     }
 
     /// Each link that a reference `[text][label]`, `[label][]` or `[label]` made, with the label of
@@ -448,10 +509,20 @@ pub fn process_markdown(
     actions: &[Action],
     ctx: &ActionContext,
 ) -> anyhow::Result<String> {
+    process_markdown_from(markdown, actions, ctx, Path::new("<stdin>"))
+}
+
+/// Process Markdown from `source`, including its file name in warnings and asset errors.
+pub fn process_markdown_from(
+    markdown: &str,
+    actions: &[Action],
+    ctx: &ActionContext,
+    source: &Path,
+) -> anyhow::Result<String> {
     let options = gfm_math_options();
     let arena = Arena::new();
     let loader = Loader::new(&arena, actions);
-    let root = loader.load(markdown, &ctx.refs)?;
+    let root = loader.load_from(markdown, &ctx.refs, source)?;
 
     for action in actions {
         action.apply(&arena, root, &loader, ctx)?;

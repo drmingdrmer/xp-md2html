@@ -659,7 +659,9 @@ fn process_command(args: ProcessArgs) -> Result<()> {
     }
     all_actions.extend(actions);
 
-    let processed = xp_md2html::process::process_markdown(&markdown, &all_actions, &ctx)?;
+    let source = input.as_deref().unwrap_or_else(|| Path::new("<stdin>"));
+    let processed =
+        xp_md2html::process::process_markdown_from(&markdown, &all_actions, &ctx, source)?;
     write_output(output.as_deref(), processed.as_bytes())?;
 
     if let Some(output) = output {
