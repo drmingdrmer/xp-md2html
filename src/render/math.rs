@@ -4,6 +4,7 @@ use anyhow::Context;
 
 use crate::render::chrome::ChromeRenderer;
 use crate::render::page::element_text;
+use crate::render::page::unescape_text;
 use crate::render::page::PADDING;
 
 /// MathJax 3.2.2, TeX input and SVG output with every extension, so nothing loads from the network.
@@ -28,13 +29,21 @@ pub fn math_page(tex: &str, display: bool) -> String {
          <html><head><meta charset=\"utf-8\"><style>\n\
          body {{ margin: 0; padding: {PADDING}px; }}\n\
          mjx-assistive-mml {{ display: none; }}\n\
-         #size {{ display: none; }}\n\
+         #size, #err {{ display: none; }}\n\
          </style></head><body>\n\
          <div id=\"tex\" hidden>{escaped}</div>\n\
          <div id=\"out\"></div>\n\
          <div id=\"size\"></div>\n\
+         <div id=\"err\"></div>\n\
          <script>\n\
          window.MathJax = {{\n\
+           tex: {{\n\
+             packages: {{ '[-]': ['noerrors', 'noundefined'] }},\n\
+             formatError(jax, error) {{\n\
+               document.getElementById('err').textContent = error.message;\n\
+               return jax.formatError(error);\n\
+             }}\n\
+           }},\n\
            svg: {{ fontCache: 'local' }},\n\
            options: {{ enableMenu: false }},\n\
            startup: {{\n\
@@ -42,11 +51,16 @@ pub fn math_page(tex: &str, display: bool) -> String {
              ready() {{\n\
                MathJax.startup.defaultReady();\n\
                const tex = document.getElementById('tex').textContent;\n\
-               const node = MathJax.tex2svg(tex, {{ display: {display} }});\n\
-               document.getElementById('out').appendChild(node);\n\
-               const box = node.querySelector('svg').getBoundingClientRect();\n\
-               const size = Math.ceil(box.right) + ' ' + Math.ceil(box.bottom);\n\
-               document.getElementById('size').textContent = size;\n\
+               try {{\n\
+                 const node = MathJax.tex2svg(tex, {{ display: {display} }});\n\
+                 if (document.getElementById('err').textContent) return;\n\
+                 document.getElementById('out').appendChild(node);\n\
+                 const box = node.querySelector('svg').getBoundingClientRect();\n\
+                 const size = Math.ceil(box.right) + ' ' + Math.ceil(box.bottom);\n\
+                 document.getElementById('size').textContent = size;\n\
+               }} catch (error) {{\n\
+                 document.getElementById('err').textContent = error.message || String(error);\n\
+               }}\n\
              }}\n\
            }}\n\
          }};\n\
@@ -59,7 +73,7 @@ pub fn math_page(tex: &str, display: bool) -> String {
 /// The SVG that MathJax makes of `tex`; every glyph is a path inside it, so it stands alone.
 pub fn math_to_svg(renderer: &ChromeRenderer, tex: &str, display: bool) -> anyhow::Result<String> {
     let dom = renderer.dump_dom(&math_page(tex, display))?;
-    extract_svg(&dom)
+    extract_svg(&dom).with_context(|| format!("Failed to render formula: {tex}"))
 }
 
 /// The image of `tex` that `renderer` makes, in its window grown to fit the formula plus
@@ -73,7 +87,8 @@ pub fn math_to_image(
 ) -> anyhow::Result<Vec<u8>> {
     let page = math_page(tex, display);
     let dom = renderer.dump_dom(&page)?;
-    let (right, bottom) = formula_edges(&dom)?;
+    let (right, bottom) =
+        formula_edges(&dom).with_context(|| format!("Failed to render formula: {tex}"))?;
     let fitted = renderer.with_window_at_least(
         right.saturating_add(PADDING),
         bottom.saturating_add(PADDING),
@@ -84,6 +99,7 @@ pub fn math_to_image(
 /// The right and the bottom edge of the formula, in CSS pixels, that the script of [`math_page`]
 /// wrote into `#size` of `dom`.
 fn formula_edges(dom: &str) -> anyhow::Result<(u32, u32)> {
+    check_math_error(dom)?;
     let size = element_text(dom, "size").context("The page has no #size element")?;
     let Some((right, bottom)) = size.split_once(' ') else {
         anyhow::bail!("The page measured no formula: {size:?}");
@@ -99,6 +115,7 @@ fn formula_edges(dom: &str) -> anyhow::Result<(u32, u32)> {
 
 /// The `<svg>` element that MathJax put inside its `<mjx-container>` in `dom`.
 fn extract_svg(dom: &str) -> anyhow::Result<String> {
+    check_math_error(dom)?;
     let container = dom
         .find("<mjx-container")
         .context("MathJax left no <mjx-container> in the page")?;
@@ -110,6 +127,14 @@ fn extract_svg(dom: &str) -> anyhow::Result<String> {
         .find("</svg>")
         .context("MathJax left no </svg> in the page")?;
     Ok(after[start..end + "</svg>".len()].to_string())
+}
+
+fn check_math_error(dom: &str) -> anyhow::Result<()> {
+    let error = element_text(dom, "err").context("MathJax left no #err element in the page")?;
+    if !error.is_empty() {
+        anyhow::bail!("MathJax: {}", unescape_text(error));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -134,7 +159,7 @@ mod tests {
         let dom = "<html><body><div id=\"out\">\
             <mjx-container class=\"MathJax\" jax=\"SVG\" display=\"true\">\
             <svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1ex\"><defs></defs><g><path d=\"M0\"></path></g></svg>\
-            </mjx-container></div></body></html>";
+            </mjx-container></div><div id=\"err\"></div></body></html>";
         let svg = extract_svg(dom)?;
         assert_eq!(
             svg,
@@ -144,19 +169,31 @@ mod tests {
         let error = extract_svg("<html><body></body></html>").unwrap_err();
         assert_eq!(
             error.to_string(),
-            "MathJax left no <mjx-container> in the page"
+            "MathJax left no #err element in the page"
         );
         Ok(())
     }
 
     #[test]
     fn test_formula_edges() -> anyhow::Result<()> {
-        let dom = "<html><body><div id=\"out\"></div><div id=\"size\">2958 26</div></body></html>";
+        let dom = "<html><body><div id=\"out\"></div><div id=\"size\">2958 26</div><div id=\"err\"></div></body></html>";
         let edges = formula_edges(dom)?;
         assert_eq!(edges, (2958, 26));
 
-        let error = formula_edges("<html><body><div id=\"size\"></div></body></html>").unwrap_err();
+        let error = formula_edges(
+            "<html><body><div id=\"size\"></div><div id=\"err\"></div></body></html>",
+        )
+        .unwrap_err();
         assert_eq!(error.to_string(), "The page measured no formula: \"\"");
         Ok(())
+    }
+
+    #[test]
+    fn test_math_error_precedes_svg_and_size() {
+        let dom = "<div id=\"err\">Invalid &lt;TeX&gt; &amp; command</div>";
+        let error = extract_svg(dom).unwrap_err();
+        assert_eq!(error.to_string(), "MathJax: Invalid <TeX> & command");
+        let error = formula_edges(dom).unwrap_err();
+        assert_eq!(error.to_string(), "MathJax: Invalid <TeX> & command");
     }
 }

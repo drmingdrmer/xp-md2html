@@ -13,6 +13,50 @@ use super::xpmd_tests::TestDir;
 /// Every PNG file starts with these bytes.
 const PNG_MAGIC: [u8; 4] = [0x89, b'P', b'N', b'G'];
 
+/// Both SVG extraction and PNG measurement reject TeX errors before writing any output.
+#[test]
+fn test_invalid_tex() -> Result<()> {
+    let dir = TestDir::new()?;
+    let cases = [
+        (r"a \foo b", r"Undefined control sequence \foo"),
+        (r"\frac{a}", r"Missing argument for \frac"),
+    ];
+    for (tex, message) in cases {
+        for command in [vec!["render-math"], vec!["process", "--preset", "simple"]] {
+            let input = dir.path().join("input");
+            let source = if command[0] == "process" {
+                format!("$${tex}$$\n")
+            } else {
+                tex.to_string()
+            };
+            fs::write(&input, source)?;
+            let result = Command::new(env!("CARGO_BIN_EXE_xpmd"))
+                .current_dir(dir.path())
+                .args(command)
+                .arg("-i")
+                .arg(&input)
+                .env_remove("RUST_BACKTRACE")
+                .env_remove("RUST_LIB_BACKTRACE")
+                .output_bounded()?;
+            let status = result.status.code();
+            assert_eq!(status, Some(1));
+            assert_eq!(result.stdout, b"");
+            let stderr = String::from_utf8(result.stderr)?;
+            let expected = format!(
+                "Error: Failed to render formula: {tex}\n\nCaused by:\n    MathJax: {message}\n"
+            );
+            assert_eq!(stderr, expected);
+        }
+    }
+    let mut files = Vec::new();
+    for entry in fs::read_dir(dir.path())? {
+        let entry = entry?;
+        files.push(entry.file_name());
+    }
+    assert_eq!(files, ["input"]);
+    dir.close()
+}
+
 /// `xpmd render-math` prints one self-contained `<svg>` to stdout by default, and a PNG when `-o` says so.
 #[test]
 fn test_render_math_svg_and_png() -> Result<()> {
