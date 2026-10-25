@@ -127,6 +127,10 @@ fn embedded_url(node: Node<'_>, patterns: &[Regex]) -> anyhow::Result<Option<Str
     let NodeValue::Image(link) = &data.value else {
         return Ok(None);
     };
+    let is_local = is_root_path(&link.url) || is_relative(&link.url);
+    if !is_local {
+        return Ok(None);
+    }
     for pattern in patterns {
         let found = pattern
             .is_match(&link.url)
@@ -324,6 +328,35 @@ mod tests {
         let mut out = String::new();
         comrak::format_commonmark(root, &options, &mut out)?;
         assert_eq!(out, "A\n\nC\n\n![](b.md)\n");
+        Ok(())
+    }
+
+    /// Even a catch-all pattern opens only local paths; remote URLs stay images.
+    #[test]
+    fn test_embed_remote_urls() -> anyhow::Result<()> {
+        let markdown = "![](https://example.invalid/a.md)\n\n\
+                        ![](//example.invalid/a.md)\n\n\
+                        ![](ftp://example.invalid/a.md)\n\n![](data:text/plain,a.md)\n";
+        let options = super::super::gfm_math_options();
+        for pattern in [DEFAULT_PATTERN, "."] {
+            let arena = Arena::new();
+            let root = comrak::parse_document(&arena, markdown, &options);
+            let patterns = [Regex::new(pattern)?];
+            let loader = Loader::new(&arena, &[]);
+            let refs = Refs::default();
+            let dir = tempfile::tempdir()?;
+            let mut ctx = EmbedContext {
+                loader: &loader,
+                root_dir: dir.path(),
+                patterns: &patterns,
+                chain: Vec::new(),
+            };
+            embed(&mut ctx, root, dir.path(), &refs)?;
+            let mut out = String::new();
+            comrak::format_commonmark(root, &options, &mut out)?;
+            assert_eq!(out, markdown);
+            dir.close()?;
+        }
         Ok(())
     }
 
